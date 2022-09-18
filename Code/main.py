@@ -19,18 +19,21 @@ from utils import save_checkpoint
 from tqdm import trange
 
 
-path = '/home/clem/Documents/Thesis/Datasets'
-checkpoint_path = '/home/clem/Documents/Thesis/checkpoints'
+#path = '/home/clem/Documents/Thesis/Datasets'
+#checkpoint_path = '/home/clem/Documents/Thesis/checkpoints'
+
+path = '/zhome/fa/5/117117/Thesis/Datasets'
+checkpoint_path = '/zhome/fa/5/117117/Thesis/checkpoints'
 
 dataset_choice = 'cifar10'
 seed = 12
 epochs = 2
-batch_nb = 4
+batch_nb = 16
 num_workers = 0
 
 # Params WideResNet:
-depth = 10          # minimum 10
-widen_factor = 1
+depth = 16          # minimum 10
+widen_factor = 4
 lr = 1e-4
 weight_decay = 0
 

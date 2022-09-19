@@ -75,6 +75,8 @@ for epoch in pbar:
     # Telemetry
     pbar.set_description(f'[Epoch: {epoch+1}; LR: {lr:.4f}; ValAcc: {test_acc:.1f}]')
 
+    print('Got out of test, preceeding model saving')
+
     # save model
     is_best = test_acc > best_acc
     best_acc = max(test_acc, best_acc)

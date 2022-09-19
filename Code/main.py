@@ -43,7 +43,7 @@ assert dataset_choice == 'cifar10' or dataset_choice == 'cifar100', 'Dataset can
 
 # Use CUDA
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+print(f'Start Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
 #if not os.path.isdir(args.checkpoint):
 #   mkdir_p(args.checkpoint)
 
@@ -69,7 +69,9 @@ pbar.set_description(f'[Epoch: 0; LR: {lr:.4f}; ValAcc: N/A]')
 
 for epoch in pbar:
     print(f'epoch: {epoch}')
+    print(f'Prior train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
     train_loss, train_acc = solver.train(train_loader, epoch)
+    print(f'Post train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
     test_loss, test_acc = solver.test(test_loader, epoch)
 
     # Telemetry

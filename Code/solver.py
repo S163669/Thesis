@@ -19,7 +19,7 @@ class Solver():
         
     def train(self, trainloader, epoch):
         # switch to train mode
-        
+        torch.cuda.mem_get_info(self.device)
         losses = list()
         self.model.train()
         nb_obs = 0
@@ -70,6 +70,7 @@ class Solver():
             preds = torch.argmax(outputs, dim=1)
             true_class += torch.sum(preds == targets)
             nb_obs += len(targets)
+            print(f'Post batch test Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
 
         mean_loss = torch.mean(torch.stack(losses))
         accuracy = true_class/nb_obs

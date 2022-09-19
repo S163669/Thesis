@@ -29,7 +29,7 @@ checkpoint_path = '/zhome/fa/5/117117/Thesis/checkpoints'
 dataset_choice = 'cifar10'
 seed = 12
 epochs = 2
-batch_nb = 64
+batch_nb = 256
 num_workers = 0
 
 # Params WideResNet:
@@ -42,8 +42,7 @@ weight_decay = 0
 assert dataset_choice == 'cifar10' or dataset_choice == 'cifar100', 'Dataset can only be cifar10 or cifar100.'
 
 # Use CUDA
-#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-device = torch.device("cpu")
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 #if not os.path.isdir(args.checkpoint):
 #   mkdir_p(args.checkpoint)

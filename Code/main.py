@@ -18,6 +18,7 @@ from utils import save_checkpoint
 
 from tqdm import trange
 
+torch.cuda.is_available()
 
 #path = '/home/clem/Documents/Thesis/Datasets'
 #checkpoint_path = '/home/clem/Documents/Thesis/checkpoints'
@@ -28,7 +29,7 @@ checkpoint_path = '/zhome/fa/5/117117/Thesis/checkpoints'
 dataset_choice = 'cifar10'
 seed = 12
 epochs = 2
-batch_nb = 16
+batch_nb = 64
 num_workers = 0
 
 # Params WideResNet:
@@ -41,7 +42,8 @@ weight_decay = 0
 assert dataset_choice == 'cifar10' or dataset_choice == 'cifar100', 'Dataset can only be cifar10 or cifar100.'
 
 # Use CUDA
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu")
 
 #if not os.path.isdir(args.checkpoint):
 #   mkdir_p(args.checkpoint)
@@ -52,7 +54,7 @@ train_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_
 # Model
 model = WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0.0)
 
-model = torch.nn.DataParallel(model).cuda()
+#model = torch.nn.DataParallel(model).cuda()
 cudnn.benchmark = True
 print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
 criterion = nn.CrossEntropyLoss()

@@ -33,21 +33,21 @@ class Solver():
             loss = self.criterion(outputs, targets)
             
             preds = torch.argmax(outputs, dim=1)
-            true_class += torch.sum(preds == targets)
+            true_class += torch.sum(preds == targets).item()
             nb_obs += len(targets)
             
-            print(f'Post batch train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
+            #print(f'Post batch train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
             
             # compute gradient and do SGD step
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
-            losses.append(loss.cpu())
+            losses.append(loss.cpu().item())
             
-            print(f'Post backprop batch train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
+            #print(f'Post backprop batch train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
             
-        mean_loss = torch.mean(torch.stack(losses))
+        mean_loss = sum(losses)/len(losses)
         accuracy = true_class/nb_obs
         
         return mean_loss, accuracy
@@ -69,14 +69,14 @@ class Solver():
                 # compute output
                 outputs = self.model(inputs)
                 loss = self.criterion(outputs, targets)
-                losses.append(loss.cpu())
+                losses.append(loss.cpu().item())
                 
                 preds = torch.argmax(outputs, dim=1)
-                true_class += torch.sum(preds == targets)
+                true_class += torch.sum(preds == targets).item()
                 nb_obs += len(targets)
-                print(f'Post batch test Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
+                #print(f'Post batch test Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
 
-        mean_loss = torch.mean(torch.stack(losses))
+        mean_loss = sum(losses)/len(losses)
         accuracy = true_class/nb_obs
         
         return mean_loss, accuracy

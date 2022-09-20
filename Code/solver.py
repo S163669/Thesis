@@ -58,22 +58,23 @@ class Solver():
         nb_obs = 0
         true_class = 0
         
-        # switch to evaluate mode
-        self.model.eval()
-
-        for batch_idx, (inputs, targets) in enumerate(testloader):
-            
-            inputs, targets = inputs.to(self.device), targets.to(self.device)
-
-            # compute output
-            outputs = self.model(inputs)
-            loss = self.criterion(outputs, targets)
-            losses.append(loss.cpu())
-            
-            preds = torch.argmax(outputs, dim=1)
-            true_class += torch.sum(preds == targets)
-            nb_obs += len(targets)
-            print(f'Post batch test Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
+        with torch.no_grad():
+            # switch to evaluate mode
+            self.model.eval()
+    
+            for batch_idx, (inputs, targets) in enumerate(testloader):
+                
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+    
+                # compute output
+                outputs = self.model(inputs)
+                loss = self.criterion(outputs, targets)
+                losses.append(loss.cpu())
+                
+                preds = torch.argmax(outputs, dim=1)
+                true_class += torch.sum(preds == targets)
+                nb_obs += len(targets)
+                print(f'Post batch test Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
 
         mean_loss = torch.mean(torch.stack(losses))
         accuracy = true_class/nb_obs

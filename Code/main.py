@@ -18,8 +18,6 @@ from utils import save_checkpoint
 
 from tqdm import trange
 
-torch.cuda.is_available()
-
 #path = '/home/clem/Documents/Thesis/Datasets'
 #checkpoint_path = '/home/clem/Documents/Thesis/checkpoints'
 
@@ -53,8 +51,9 @@ train_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_
 # Model
 model = WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0.0)
 
-#model = torch.nn.DataParallel(model).cuda()
+model = torch.nn.DataParallel(model).to(device)
 cudnn.benchmark = True
+
 print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)

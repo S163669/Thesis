@@ -70,7 +70,7 @@ pbar.set_description(f'[Epoch: 0; LR: {lr:.4f}; ValAcc: N/A]')
 metrics = {'train_losses': list(), 'test_losses': list(), 'train_accs': list(), 'test_accs': list()}
 
 for epoch in pbar:
-    print(f'epoch: {epoch}')
+    #print(f'epoch: {epoch}')
     #print(f'Prior train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
     train_loss, train_acc = solver.train(train_loader, epoch)
     #print(f'Post train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
@@ -82,9 +82,9 @@ for epoch in pbar:
     metrics['test_accs'].append(test_acc)
 
     # Telemetry
-    pbar.set_description(f'[Epoch: {epoch+1}; LR: {lr:.4f}; ValAcc: {test_acc:.1f}]')
+    pbar.set_description(f'[Epoch: {epoch+1}; LR: {lr:.4f}; ValAcc: {test_acc:.1f}]\n')
 
-    print('Got out of test, preceeding model saving')
+    #print('Got out of test, preceeding model saving')
 
     # save model
     is_best = test_acc > best_acc
@@ -98,7 +98,7 @@ for epoch in pbar:
         }, is_best, checkpoint=checkpoint_path)
 
 f = open("metrics.pkl","wb")
-pickle.dump(dict,f)
+pickle.dump(metrics,f)
 f.close()
 
 print('Best acc:')

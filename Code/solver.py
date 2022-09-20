@@ -36,13 +36,17 @@ class Solver():
             true_class += torch.sum(preds == targets)
             nb_obs += len(targets)
             
+            print(f'Post batch train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
+            
             # compute gradient and do SGD step
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
 
             losses.append(loss.cpu())
-        
+            
+            print(f'Post backprop batch train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
+            
         mean_loss = torch.mean(torch.stack(losses))
         accuracy = true_class/nb_obs
         

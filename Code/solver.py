@@ -19,7 +19,6 @@ class Solver():
         
     def train(self, trainloader, epoch):
         # switch to train mode
-        torch.cuda.mem_get_info(self.device)
         losses = list()
         self.model.train()
         nb_obs = 0
@@ -59,7 +58,7 @@ class Solver():
         self.model.eval()
 
         for batch_idx, (inputs, targets) in enumerate(testloader):
-
+            
             inputs, targets = inputs.to(self.device), targets.to(self.device)
 
             # compute output

@@ -53,7 +53,7 @@ class Solver():
         return mean_loss, accuracy
 
     def test(self, testloader, epoch):
-        print('entering test')
+        #print('entering test')
         losses = list()
         nb_obs = 0
         true_class = 0

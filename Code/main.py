@@ -16,6 +16,7 @@ from dataloaders import load_cifar
 from solver import Solver
 from utils import save_checkpoint
 import pickle
+import os
 
 from tqdm import trange
 
@@ -27,16 +28,19 @@ checkpoint_path = '/zhome/fa/5/117117/Thesis/checkpoints'
 
 dataset_choice = 'cifar10'
 seed = 12
-epochs = 200
+epochs = 400
 batch_nb = 256
 num_workers = 0
 
 # Params WideResNet:
 depth = 16          # minimum 10
 widen_factor = 4
-lr = 1e-4
+lr = 1e-5
 weight_decay = 0
 
+model_params = f'WideResNet_MAP_lr_{lr}_btch_{batch_nb}_epochs_{epochs}_wd_{weight_decay}'
+
+checkpoint_path = os.path.join(checkpoint_path, model_params)
 
 assert dataset_choice == 'cifar10' or dataset_choice == 'cifar100', 'Dataset can only be cifar10 or cifar100.'
 
@@ -97,7 +101,9 @@ for epoch in pbar:
             'optimizer' : optimizer.state_dict(),
         }, is_best, checkpoint=checkpoint_path)
 
-f = open("metrics.pkl","wb")
+metrics_path = os.path.join('Run_metrics', model_params)
+os.makedirs(metrics_path)
+f = open(os.path.join(metrics_path,"metrics.pkl"),"wb")
 pickle.dump(metrics,f)
 f.close()
 

@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pt'):
     
+    os.makedirs(checkpoint)
     filepath = os.path.join(checkpoint, filename)
     torch.save(state, filepath)
     if is_best:
@@ -21,17 +22,17 @@ def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoin
         
 def plot_metrics(metrics, lst, group_train_test=True, savefig=True):
     
-    epochs = range(1,len(metrics[lst[0]])+1)
+    epochs = list(range(1,len(metrics[lst[0]])+1))
     
     if group_train_test:
         itr = len(lst)//2
         
-    for i in itr:
+    for i in range(itr):
         
         plt.figure()
         plt.plot(epochs, metrics[lst[2*i]], label=f'{lst[2*i]}')
         plt.plot(epochs, metrics[lst[2*i+1]], label=f'{lst[2*i+1]}')
-        plt.xlabel(epochs)
+        plt.xlabel('epochs')
         if lst[2*i][:-3] == 'acc':
             plt.ylabel('Accuracy')
         else:

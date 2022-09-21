@@ -13,7 +13,8 @@ import matplotlib.pyplot as plt
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pt'):
     
-    os.makedirs(checkpoint)
+    if os.path.exists(checkpoint):
+        os.makedirs(checkpoint)
     filepath = os.path.join(checkpoint, filename)
     torch.save(state, filepath)
     if is_best:

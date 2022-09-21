@@ -102,7 +102,10 @@ for epoch in pbar:
         }, is_best, checkpoint=checkpoint_path)
 
 metrics_path = os.path.join('Run_metrics', model_params)
-os.makedirs(metrics_path)
+
+if not os.path.exists(metrics_path):
+    os.makedirs(metrics_path)
+    
 f = open(os.path.join(metrics_path,"metrics.pkl"),"wb")
 pickle.dump(metrics,f)
 f.close()

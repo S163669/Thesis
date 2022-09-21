@@ -38,7 +38,7 @@ widen_factor = 4
 lr = 1e-5
 weight_decay = 0
 
-model_params = f'WideResNet_MAP_lr_{lr}_btch_{batch_nb}_epochs_{epochs}_wd_{weight_decay}'
+model_params = f'WideResNet-{depth}-{widen_factor}_MAP_lr_{lr}_btch_{batch_nb}_epochs_{epochs}_wd_{weight_decay}'
 
 checkpoint_path = os.path.join(checkpoint_path, model_params)
 

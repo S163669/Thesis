@@ -28,7 +28,7 @@ checkpoint_path = '/zhome/fa/5/117117/Thesis/checkpoints'
 
 dataset_choice = 'cifar10'
 seed = 12
-epochs = 300
+epochs = 500
 batch_nb = 256
 num_workers = 0
 
@@ -36,7 +36,7 @@ num_workers = 0
 depth = 16          # minimum 10
 widen_factor = 4
 lr = 1e-4
-weight_decay = 1e-6
+weight_decay = 1e-2
 
 model_params = f'WideResNet-{depth}-{widen_factor}_MAP_lr_{lr}_btch_{batch_nb}_epochs_{epochs}_wd_{weight_decay}'
 

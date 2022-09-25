@@ -21,25 +21,22 @@ def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoin
         shutil.copyfile(filepath, os.path.join(checkpoint, 'model_best.pt'))
         
         
-def plot_metrics(metrics, lst, group_train_test=True, savefig=True):
+def plot_metrics(metrics, lst, title, savefig=True):
     
     epochs = list(range(1,len(metrics[lst[0]])+1))
+        
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12,4))
+    fig.suptitle(f'{title}')
+    ax1.plot(epochs, metrics[lst[0]], label=f'{lst[0]}')
+    ax1.plot(epochs, metrics[lst[1]], label=f'{lst[1]}')
+    ax2.plot(epochs, metrics[lst[2]], label=f'{lst[2]}')
+    ax2.plot(epochs, metrics[lst[3]], label=f'{lst[3]}')
+    ax1.set(xlabel='epochs', ylabel='Loss')
+    ax2.set(xlabel='epochs', ylabel='Accuracy')
+    ax1.legend()
+    ax2.legend()
     
-    if group_train_test:
-        itr = len(lst)//2
-        
-    for i in range(itr):
-        
-        plt.figure()
-        plt.plot(epochs, metrics[lst[2*i]], label=f'{lst[2*i]}')
-        plt.plot(epochs, metrics[lst[2*i+1]], label=f'{lst[2*i+1]}')
-        plt.xlabel('epochs')
-        if lst[2*i][:-3] == 'acc':
-            plt.ylabel('Accuracy')
-        else:
-            plt.ylabel('Loss')
-        plt.legend()
-        if savefig:
-            plt.savefig('loss_plot.pdf', bbox_inches='tight', format='pdf')
-        else:
-            plt.show()
+    if savefig:
+        plt.savefig(f'/home/clem/Documents/Thesis/Figures/{title}.pdf', bbox_inches='tight', format='pdf')
+    else:
+        plt.show()

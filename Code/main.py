@@ -28,15 +28,15 @@ checkpoint_path = '/zhome/fa/5/117117/Thesis/checkpoints'
 
 dataset_choice = 'cifar10'
 seed = 12
-epochs = 500
-batch_nb = 256
+epochs = 200
+batch_nb = 16
 num_workers = 0
 
 # Params WideResNet:
 depth = 16          # minimum 10
 widen_factor = 4
-lr = 1e-4
-weight_decay = 1e-2
+lr = 1e-1
+weight_decay = 5e-4
 
 model_params = f'WideResNet-{depth}-{widen_factor}_MAP_lr_{lr}_btch_{batch_nb}_epochs_{epochs}_wd_{weight_decay}'
 
@@ -61,9 +61,12 @@ cudnn.benchmark = True
 
 print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+#optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, nesterov=True, weight_decay=weight_decay)
+n_steps = epochs * len(train_loader)
+scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_steps, eta_min=1e-12)
 
-solver = Solver(model, optimizer, criterion, device)
+solver = Solver(model, optimizer, criterion, device, scheduler=scheduler)
 
 best_acc = 0  # best test accuracy
 
@@ -86,7 +89,7 @@ for epoch in pbar:
     metrics['test_accs'].append(test_acc)
 
     # Telemetry
-    pbar.set_description(f'[Epoch: {epoch+1}; LR: {lr:.4f}; ValAcc: {test_acc:.1f}]\n')
+    pbar.set_description(f'[Epoch: {epoch+1}; LR: {lr:.4f}; ValAcc: {test_acc:.2f}]\n')
 
     #print('Got out of test, preceeding model saving')
 

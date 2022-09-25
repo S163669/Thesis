@@ -10,12 +10,13 @@ import torch
 
 class Solver():
     
-    def __init__(self, model, optimizer, criterion, device):
+    def __init__(self, model, optimizer, criterion, device, scheduler=None):
         
         self.device = device
         self.model=model.to(device)
         self.optimizer = optimizer
         self.criterion = criterion.to(device)
+        self.scheduler = None
         
     def train(self, trainloader, epoch):
         # switch to train mode
@@ -42,7 +43,10 @@ class Solver():
             self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
-
+            
+            if self.scheduler is not None:
+                self.scheduler.step()
+                
             losses.append(loss.cpu().item())
             
             #print(f'Post backprop batch train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')

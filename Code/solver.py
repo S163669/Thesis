@@ -16,7 +16,7 @@ class Solver():
         self.model=model.to(device)
         self.optimizer = optimizer
         self.criterion = criterion.to(device)
-        self.scheduler = None
+        self.scheduler = scheduler
         
     def train(self, trainloader, epoch):
         # switch to train mode

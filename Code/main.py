@@ -27,6 +27,7 @@ path = '/zhome/fa/5/117117/Thesis/Datasets'
 checkpoint_path = '/zhome/fa/5/117117/Thesis/checkpoints'
 
 dataset_choice = 'cifar10'
+opt_choice = 'SGD'      # if Adam then Adam optimizer is used else SGD with Nesterov
 seed = 12
 epochs = 200
 batch_nb = 16
@@ -61,10 +62,13 @@ cudnn.benchmark = True
 
 print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
 criterion = nn.CrossEntropyLoss()
-#optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
-optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, nesterov=True, weight_decay=weight_decay)
-n_steps = epochs * len(train_loader)
-scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_steps, eta_min=1e-12)
+
+if opt_choice == 'Adam':
+    optimizer = optim.Adam(model.parameters(), lr=lr, weight_decay=weight_decay)
+else:
+    optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, nesterov=True, weight_decay=weight_decay)
+    n_steps = epochs * len(train_loader)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_steps, eta_min=1e-8)
 
 solver = Solver(model, optimizer, criterion, device, scheduler=scheduler)
 

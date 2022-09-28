@@ -39,7 +39,11 @@ widen_factor = 4
 lr = 1e-1
 weight_decay = 5e-4
 
-model_params = f'WideResNet-{depth}-{widen_factor}_MAP_lr_{lr}_btch_{batch_nb}_epochs_{epochs}_wd_{weight_decay}'
+if opt_choice == 'Adam':
+    model_params = f'WideResNet-{depth}-{widen_factor}_MAP_Adam_lr_{lr}_btch_{batch_nb}_epochs_{epochs}_wd_{weight_decay}'
+else:
+    lr_min = 1e-8
+    model_params = f'WideResNet-{depth}-{widen_factor}_MAP_SGDNesterov_lr_{lr}_lr_min_{lr_min}_btch_{batch_nb}_epochs_{epochs}_wd_{weight_decay}'
 
 checkpoint_path = os.path.join(checkpoint_path, model_params)
 
@@ -68,7 +72,7 @@ if opt_choice == 'Adam':
 else:
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, nesterov=True, weight_decay=weight_decay)
     n_steps = epochs * len(train_loader)
-    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_steps, eta_min=1e-8)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_steps, eta_min=lr_min)
 
 solver = Solver(model, optimizer, criterion, device, scheduler=scheduler)
 

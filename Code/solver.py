@@ -18,9 +18,9 @@ class Solver():
         self.criterion = criterion.to(device)
         self.scheduler = scheduler
         
-    def train(self, trainloader, epoch):
+    def train(self, trainloader):
         # switch to train mode
-        losses = list()
+        losses = []
         self.model.train()
         nb_obs = 0
         true_class = 0
@@ -56,9 +56,9 @@ class Solver():
         
         return mean_loss, accuracy
 
-    def test(self, testloader, epoch):
+    def test(self, testloader):
         #print('entering test')
-        losses = list()
+        losses = []
         nb_obs = 0
         true_class = 0
         

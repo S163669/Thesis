@@ -82,7 +82,7 @@ best_acc = 0  # best test accuracy
 pbar = trange(0, epochs)
 pbar.set_description(f'[Epoch: 0; LR: {lr:.4f}; ValAcc: N/A]')
 
-metrics = {'train_losses': list(), 'test_losses': list(), 'train_accs': list(), 'test_accs': list()}
+metrics = {'train_losses': [], 'val_losses': [], 'train_accs': [], 'val_accs': [] ,'test_acc': float}
 
 for epoch in pbar:
     #print(f'epoch: {epoch}')

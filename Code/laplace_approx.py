@@ -38,9 +38,8 @@ def predict(testloader, device, model, using_laplace=False):
     return preds, targets
 
 
-path = '/home/clem/Documents/Thesis/Datasets'
-
-#path = '/zhome/fa/5/117117/Thesis/Datasets'
+basepath = '/home/clem/Documents/Thesis/'
+#basepath = '/zhome/fa/5/117117/Thesis/'
 
 dataset_choice = 'cifar10'
 torch.manual_seed = 12
@@ -52,7 +51,7 @@ model = WideResNet(depth=16, num_classes=10, widen_factor=4, dropRate=0.0)
 model = torch.nn.DataParallel(model).to(device)
 
 #checkpoint_bestmodel = torch.load('/home/clem/Documents/Thesis/checkpoints/WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_16_epochs_150_wd_0.0005/model_best.pt')
-checkpoint_bestmodel = torch.load('/home/clem/Documents/Thesis/checkpoints/WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5/model_best.pt')
+checkpoint_bestmodel = torch.load(basepath + 'checkpoints/WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5/model_best.pt')
 
 
 model.load_state_dict(checkpoint_bestmodel['state_dict'])
@@ -61,7 +60,7 @@ la = Laplace(model, 'classification',
              subset_of_weights='last_layer',
              hessian_structure='full')
 
-train_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_nb, num_workers, val_size=0)
+train_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers, val_size=0)
 
 la.fit(train_loader)
 la.optimize_prior_precision(method='marglik')
@@ -90,9 +89,10 @@ def model_hmc(data, num_classes, labels):
     coefs = pyro.sample('prior_samples', dist.Normal(coefs_mean, ((1/40)**1/2)*torch.ones(dim)))  #Precision of 40 in paper
 
     #y = pyro.sample('y', dist.Bernoulli(logits=(coefs * data).sum(-1)), obs=labels)
-    y = torch.argmax(torch.softmax(data @ coefs.reshape(-1,10), dim=1), dim=1)
+    #y = torch.argmax(torch.softmax(data @ coefs.reshape(-1,10), dim=1), dim=1)
     #y = pyro.sample('y', dist.Categorical(logits=data @ coefs.reshape(-1,10)), obs=labels)
-    
+    y = torch.softmax(data @ coefs.reshape(-1,10), dim=1)
+    y = y[range(len(y)), labels]
     return y
     
 
@@ -113,9 +113,9 @@ with torch.no_grad():
     for x, y in train_loader:
         
         model.eval()
-        output = model(x.cpu())
+        output = model(x.to(device))
         acts.append(activation['bn1'])
-        ys.append(y.cpu())
+        ys.append(y)
 
 acts = torch.cat(acts, dim=0)
 ys = torch.cat(ys)
@@ -130,6 +130,9 @@ mcmc.run(data, num_classes, ys)
 
 la_samples = la.sample(500)
 hmc_samples = mcmc.get_samples(500)
+
+print(f"Mean LA samples {la_samples.mean(0)}")
+print(f"Mean HMC samples {hmc_samples['prior_samples'].mean(0)}")
 
 
 

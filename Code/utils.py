@@ -40,3 +40,53 @@ def plot_metrics(metrics, lst, title, savefig=True):
         plt.savefig(f'/home/clem/Documents/Thesis/Figures/{title}.pdf', bbox_inches='tight', format='pdf')
     else:
         plt.show()
+        
+def plot_prior_vs_posterior_weights_pred(hmc_samples, data, labels, num_classes):
+    
+    hmc_samples = hmc_samples['prior_samples']
+    pad_1 = torch.nn.ConstantPad1d((0,1), 1)
+    data = pad_1(data)
+    
+    nb_samples = hmc_samples.size()[0]
+    dim = data.size()[1]*num_classes
+    #coefs_mean = mean*torch.ones(len(var))
+    coefs_mean = torch.zeros(dim)
+    prior_samples = torch.distributions.normal.Normal(coefs_mean, ((1/40)**1/2)*torch.ones(dim)).sample(nb_samples)  #Precision of 40 in paper
+    
+    plt.figure()
+    plt.title('Mean coefficient value prior samples vs hmc samples')
+    plt.plot(range(dim), prior_samples.mean(0), label='prior samples mean')
+    plt.plot(range(dim), hmc_samples.mean(0), label='hmc samples mean')
+    plt.xlabel('coefficient number')
+    plt.ylabel('coefficient mean value')
+    plt.legend()
+    
+    if not os.path.exists('./Figures'):
+        os.makedirs('./Figures')
+    
+    plt.savefig('Figures/hmc_coefs_vs_prior_coeffs.pdf', bbox_inches='tight', format='pdf')
+    
+    prior_probs = []
+    hmc_probs = []
+    
+    for i in range(nb_samples):
+        
+        prior_prob = torch.softmax(data @ prior_samples[i].reshape(-1,10), dim=1)
+        hmc_prob = torch.softmax(data @ hmc_samples[i].reshape(-1,10), dim=1)
+        
+        prior_probs.append(prior_prob[range(len(labels)), labels])
+        hmc_probs.append(hmc_prob[range(len(labels)), labels])
+    
+    prior_prob_mean = torch.mean(torch.stack(prior_probs), dim=0)
+    hmc_prob_mean = torch.mean(torch.stack(hmc_probs), dim=0)
+
+    plt.figure()
+    plt.title('Probability mean of last layer weight from prior vs from hmc')
+    plt.plot(prior_prob_mean, hmc_prob_mean, '.')
+    plt.xlabel('prior weights probability mean')
+    plt.ylabel('hmc weihgts probability mean)')
+    plt.savefig('Figures/prob_mean_hmc_coeffs_vs_prior_coeffs.pdf', bbox_inches='tight', format='pdf')
+    
+    print(f'Probability mean for prior weight samples {torch.mean(prior_prob_mean).item()}')
+    print(f'Probability mean for hmc weight samples {torch.mean(hmc_prob_mean).item()}')
+    

@@ -43,7 +43,7 @@ basepath = '/home/clem/Documents/Thesis/'
 
 dataset_choice = 'cifar10'
 torch.manual_seed = 12
-batch_nb = 16
+batch_nb = 128
 num_workers = 0
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -77,6 +77,7 @@ import torch
 import pyro
 import pyro.distributions as dist
 import torch.nn.functional as F
+from utils import plot_prior_vs_posterior_weights_pred
 
 def model_hmc(data, num_classes, labels):
     
@@ -90,9 +91,9 @@ def model_hmc(data, num_classes, labels):
 
     #y = pyro.sample('y', dist.Bernoulli(logits=(coefs * data).sum(-1)), obs=labels)
     #y = torch.argmax(torch.softmax(data @ coefs.reshape(-1,10), dim=1), dim=1)
-    #y = pyro.sample('y', dist.Categorical(logits=data @ coefs.reshape(-1,10)), obs=labels)
-    y = torch.softmax(data @ coefs.reshape(-1,10), dim=1)
-    y = y[range(len(y)), labels]
+    y = pyro.sample('y', dist.Categorical(logits=data @ coefs.reshape(-1,10)), obs=labels)
+    #y = torch.softmax(data @ coefs.reshape(-1,10), dim=1)
+    #y = y[range(len(y)), labels]
     return y
     
 
@@ -123,6 +124,8 @@ ys = torch.cat(ys)
 data = F.avg_pool2d(acts, 8)
 data = data.view(-1, 64*4).cpu()
 
+torch.save({'out_L-1' : data, 'labels' : ys}, './Datasets/output_data_L-1')
+
 nuts_kernel = pyro.infer.NUTS(model_hmc)
 mcmc = pyro.infer.MCMC(nuts_kernel, num_samples=600, warmup_steps=300)
 
@@ -133,6 +136,12 @@ hmc_samples = mcmc.get_samples(500)
 
 print(f"Mean LA samples {la_samples.mean(0)}")
 print(f"Mean HMC samples {hmc_samples['prior_samples'].mean(0)}")
+
+torch.save(hmc_samples, './Run_metrics/hmc_samples')
+torch.save(la_samples, './Run_metrics/la_samples')
+
+plot_prior_vs_posterior_weights_pred(hmc_samples, data, ys, num_classes)
+
 
 
 

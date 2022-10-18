@@ -51,12 +51,12 @@ def plot_prior_vs_posterior_weights_pred(hmc_samples, data, labels, num_classes)
     dim = data.size()[1]*num_classes
     #coefs_mean = mean*torch.ones(len(var))
     coefs_mean = torch.zeros(dim)
-    prior_samples = torch.distributions.normal.Normal(coefs_mean, ((1/40)**1/2)*torch.ones(dim)).sample(nb_samples)  #Precision of 40 in paper
+    prior_samples = torch.distributions.normal.Normal(coefs_mean, ((1/40)**1/2)*torch.ones(dim)).sample(torch.Size([nb_samples]))  #Precision of 40 in paper
     
     plt.figure()
     plt.title('Mean coefficient value prior samples vs hmc samples')
-    plt.plot(range(dim), prior_samples.mean(0), label='prior samples mean')
-    plt.plot(range(dim), hmc_samples.mean(0), label='hmc samples mean')
+    plt.plot(range(dim), prior_samples.mean(0), '.', label='prior samples mean')
+    plt.plot(range(dim), hmc_samples.mean(0), '.', alpha=0.3, label='hmc samples mean')
     plt.xlabel('coefficient number')
     plt.ylabel('coefficient mean value')
     plt.legend()
@@ -82,9 +82,11 @@ def plot_prior_vs_posterior_weights_pred(hmc_samples, data, labels, num_classes)
 
     plt.figure()
     plt.title('Probability mean of last layer weight from prior vs from hmc')
-    plt.plot(prior_prob_mean, hmc_prob_mean, '.')
+    plt.plot(torch.linspace(0,1,100),torch.linspace(0,1,100), label='reference line') 
+    plt.plot(prior_prob_mean, hmc_prob_mean, '.', label='data samples')
     plt.xlabel('prior weights probability mean')
     plt.ylabel('hmc weihgts probability mean)')
+    plt.legend()
     plt.savefig('Figures/prob_mean_hmc_coeffs_vs_prior_coeffs.pdf', bbox_inches='tight', format='pdf')
     
     print(f'Probability mean for prior weight samples {torch.mean(prior_prob_mean).item()}')

@@ -16,7 +16,7 @@ from netcal.metrics import ECE
 #import torch.nn.functional as F
 
 
-def predict(testloader, device, model, using_laplace=False):
+def predict(testloader, device, model, using_laplace=False, link_approx='mc', n_samples=20):
 
     preds = []    
     targets = []
@@ -26,7 +26,7 @@ def predict(testloader, device, model, using_laplace=False):
         inputs = inputs.to(device)
 
         if using_laplace:
-            preds.append(model(inputs))
+            preds.append(model(inputs, link_approx=link_approx, n_samples=n_samples))
         else:
             preds.append(torch.softmax(model(inputs), dim=-1))
         
@@ -51,7 +51,7 @@ model = WideResNet(depth=16, num_classes=10, widen_factor=4, dropRate=0.0)
 model = torch.nn.DataParallel(model).to(device)
 
 #checkpoint_bestmodel = torch.load('/home/clem/Documents/Thesis/checkpoints/WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_16_epochs_150_wd_0.0005/model_best.pt')
-checkpoint_bestmodel = torch.load(basepath + 'checkpoints/WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5/model_best.pt')
+checkpoint_bestmodel = torch.load(basepath + 'checkpoints/WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5/checkpoint.pt')
 
 
 model.load_state_dict(checkpoint_bestmodel['state_dict'])
@@ -63,7 +63,7 @@ la = Laplace(model, 'classification',
 train_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers, val_size=0)
 
 la.fit(train_loader)
-la.optimize_prior_precision(method='marglik')
+la.optimize_prior_precision(method='marglik', link_approx='mc')
 
 probs_laplace, targets = predict(test_loader, device, la, using_laplace=True)
 acc_laplace = (probs_laplace.numpy().argmax(-1) == targets.numpy()).astype(int).mean()
@@ -87,7 +87,7 @@ def model_hmc(data, num_classes, labels):
     dim = data.size()[1]*num_classes
     #coefs_mean = mean*torch.ones(len(var))
     coefs_mean = torch.zeros(dim)
-    coefs = pyro.sample('prior_samples', dist.Normal(coefs_mean, ((1/40)**1/2)*torch.ones(dim)))  #Precision of 40 in paper
+    coefs = pyro.sample('ll_weights', dist.Normal(coefs_mean, ((1/40)**1/2)*torch.ones(dim)))  #Precision of 40 in paper
 
     #y = pyro.sample('y', dist.Bernoulli(logits=(coefs * data).sum(-1)), obs=labels)
     #y = torch.argmax(torch.softmax(data @ coefs.reshape(-1,10), dim=1), dim=1)
@@ -110,10 +110,9 @@ acts = []
 ys = []
 
 with torch.no_grad():
-
+    model.eval()
     for x, y in train_loader:
-        
-        model.eval()
+
         output = model(x.to(device))
         acts.append(activation['bn1'])
         ys.append(y)
@@ -124,23 +123,23 @@ ys = torch.cat(ys)
 data = F.avg_pool2d(acts, 8)
 data = data.view(-1, 64*4).cpu()
 
-torch.save({'out_L-1' : data, 'labels' : ys}, './Datasets/output_data_L-1')
+#torch.save({'out_L-1' : data, 'labels' : ys}, './Datasets/output_data_L-1')
 
 nuts_kernel = pyro.infer.NUTS(model_hmc)
 mcmc = pyro.infer.MCMC(nuts_kernel, num_samples=600, warmup_steps=300)
 
 mcmc.run(data, num_classes, ys)
 
-la_samples = la.sample(500)
-hmc_samples = mcmc.get_samples(500)
-
-print(f"Mean LA samples {la_samples.mean(0)}")
-print(f"Mean HMC samples {hmc_samples['prior_samples'].mean(0)}")
+la_samples = la.sample(600)
+hmc_samples = mcmc.get_samples(600)
 
 torch.save(hmc_samples, './Run_metrics/hmc_samples')
 torch.save(la_samples, './Run_metrics/la_samples')
 
-plot_prior_vs_posterior_weights_pred(hmc_samples, data, ys, num_classes)
+print(f"Mean LA samples {la_samples.mean(0)}")
+print(f"Mean HMC samples {hmc_samples['ll_weights'].mean(0)}")
+
+#plot_prior_vs_posterior_weights_pred(hmc_samples, data, ys, num_classes)
 
 
 

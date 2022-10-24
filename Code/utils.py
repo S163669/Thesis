@@ -92,3 +92,39 @@ def plot_prior_vs_posterior_weights_pred(hmc_samples, data, labels, num_classes)
     print(f'Probability mean for prior weight samples {torch.mean(prior_prob_mean).item()}')
     print(f'Probability mean for hmc weight samples {torch.mean(hmc_prob_mean).item()}')
     
+    
+def predict_Lm1(coeffs, data):
+    
+    y = data['labels']
+    x = data['out_L-1']
+    
+        
+    pad_1 = torch.nn.ConstantPad1d((0,1), 1)
+    x = pad_1(x)
+    
+    class_prob = torch.softmax(x @ coeffs.reshape(-1,10), dim=1)
+    y_pred = torch.argmax(class_prob, 1)
+    
+    acc = sum(y_pred == y)/len(y)
+    
+    probs_true = class_prob[range(len(y)),y]
+    
+    nll_hmc = -torch.distributions.Categorical(class_prob).log_prob(y).mean()
+    
+    return acc.item(), probs_true, nll_hmc
+    
+def metrics_hmc_samples(samples, data):
+    
+    accs = []
+    sum_probs_true = 0
+    
+    for coeff in samples:
+        
+        acc, probs_true, _ = predict_Lm1(coeff, data)
+        accs.append(acc)
+        sum_probs_true += probs_true
+    
+    nll = -torch.mean(torch.log(sum_probs_true/len(samples))).item()
+    
+    return sum(accs)/len(accs), nll
+        

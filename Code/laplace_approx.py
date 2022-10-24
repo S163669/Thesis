@@ -38,8 +38,8 @@ def predict(testloader, device, model, using_laplace=False, link_approx='mc', n_
     return preds, targets
 
 
-basepath = '/home/clem/Documents/Thesis/'
-#basepath = '/zhome/fa/5/117117/Thesis/'
+#basepath = '/home/clem/Documents/Thesis/'
+basepath = '/zhome/fa/5/117117/Thesis/'
 
 dataset_choice = 'cifar10'
 torch.manual_seed = 12
@@ -60,7 +60,7 @@ la = Laplace(model, 'classification',
              subset_of_weights='last_layer',
              hessian_structure='full')
 
-train_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers, val_size=0)
+train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers, batch_size_val=batch_nb, val_size=2000)
 
 la.fit(train_loader)
 la.optimize_prior_precision(method='marglik', link_approx='mc')

@@ -29,8 +29,8 @@ checkpoint_path = '/zhome/fa/5/117117/Thesis/checkpoints'
 dataset_choice = 'cifar10'
 opt_choice = 'SGD'      # if Adam then Adam optimizer is used else SGD with Nesterov
 torch.manual_seed = 12
-epochs = 150
-batch_size = 16
+epochs = 100
+batch_size = 128
 num_workers = 0
 
 # Params WideResNet:
@@ -42,7 +42,7 @@ weight_decay = 5e-4
 if opt_choice == 'Adam':
     model_params = f'WideResNet-{depth}-{widen_factor}_MAP_Adam_lr_{lr}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
 else:
-    lr_min = 1e-6
+    lr_min = 1e-5
     model_params = f'WideResNet-{depth}-{widen_factor}_MAP_SGDNesterov_lr_{lr}_lr_min_{lr_min}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
 
 checkpoint_path = os.path.join(checkpoint_path, model_params)
@@ -55,8 +55,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #if not os.path.isdir(args.checkpoint):
 #   mkdir_p(args.checkpoint)
 
-# Data
-train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_size, num_workers)
+# Datasum_probs_true/len(samples)
+train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_size, num_workers, batch_size_val=batch_size, val_size=2000)
 
 # Model
 model = WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0.0)

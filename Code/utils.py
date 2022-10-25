@@ -123,8 +123,9 @@ def metrics_hmc_samples(samples, data):
         acc, probs_true, _ = predict_Lm1(coeff, data)
         accs.append(acc)
         sum_probs_true += probs_true
-    
+        
+    print(torch.sort(sum_probs_true/len(samples)))
     nll = -torch.mean(torch.log(sum_probs_true/len(samples))).item()
     
-    return sum(accs)/len(accs), nll
+    return sum(accs)/len(accs), nll, sum_probs_true/len(samples)
         

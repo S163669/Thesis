@@ -11,9 +11,8 @@ import torch
 from models import WideResNet
 from dataloaders import load_cifar
 from netcal.metrics import ECE
-from utils import predict, plot_prior_vs_posterior_weights_pred, model_hmc, metrics_hmc_samples
+from utils import predict, plot_prior_vs_posterior_weights_pred, model_hmc, metrics_hmc_samples, get_act_Lm1
 import pyro
-import torch.nn.functional as F
 
 
 #basepath = '/home/clem/Documents/Thesis/'
@@ -21,6 +20,7 @@ basepath = '/zhome/fa/5/117117/Thesis/'
 do_map = True
 do_laplace = True
 do_hmc = True
+precs_prior_hmc = [1,2,4,8,16,32,64]
 
 dataset_choice = 'cifar10'
 torch.manual_seed = 12
@@ -68,51 +68,40 @@ if do_laplace:
 
 if do_hmc:
     
-    activation = {}
-    def get_activation(name):
-        def hook(model, input, output):
-            activation[name] = output.detach()
-        return hook
+    act_train, y_train = get_act_Lm1(model, train_loader, device)
+    act_val, y_val = get_act_Lm1(model, val_loader, device)
+    act_test, y_test = get_act_Lm1(model, test_loader, device)
     
-    model.module.bn1.register_forward_hook(get_activation('bn1'))
+    best_nll_hmc = -torch.log(torch.tensor(0)).item()
     
-    acts = []
-    ys = []
+    for prec in precs_prior_hmc:
+        
+        nuts_kernel = pyro.infer.NUTS(model_hmc)
+        mcmc = pyro.infer.MCMC(nuts_kernel, num_samples=600, warmup_steps=300)
     
-    with torch.no_grad():
-        model.eval()
-        for x, y in train_loader:
-    
-            output = model(x.to(device))
-            acts.append(activation['bn1'])
-            ys.append(y) 
-    
-    acts = torch.cat(acts, dim=0)
-    ys = torch.cat(ys)
-    
-    data = F.avg_pool2d(acts, 8)
-    data = data.view(-1, 64*4).cpu()
-    
-    nuts_kernel = pyro.infer.NUTS(model_hmc)
-    mcmc = pyro.infer.MCMC(nuts_kernel, num_samples=600, warmup_steps=300)
-    
-    mcmc.run(data, num_classes, ys)
+        mcmc.run(act_train, num_classes, y_train, prec)
 
-    hmc_samples = mcmc.get_samples(600)
-    torch.save(hmc_samples, './Run_metrics/hmc_samples')
+        hmc_samples = mcmc.get_samples(600)
+        
+        acc_hmc, ece_hmc, nll_hmc = metrics_hmc_samples(hmc_samples['ll_weights'], act_val, y_val)
+        
+        if nll_hmc < best_nll_hmc:
+            
+            best_acc_hmc, best_ece_hmc, best_nll_hmc = acc_hmc, ece_hmc, nll_hmc
+            best_prec = prec
+            torch.save(hmc_samples, './Run_metrics/hmc_samples')
+            
     
-    data_test = torch.load(basepath + '/Datasets/output_data_L-1_test')
-    acc_hmc, ece_hmc, nll_hmc = metrics_hmc_samples(hmc_samples['ll_weights'], data_test)
+        print(f'[HMC] validation: Prec: {prec} -> Acc.: {acc_hmc:.1%}; ECE: {ece_hmc:.1%}; NLL: {nll_hmc:.4}')
     
-    print(f'[HMC] Acc.: {acc_hmc:.1%}; ECE: {ece_hmc:.1%}; NLL: {nll_hmc:.4}')
+    print(f'[HMC] BEST validation: Opt-Prec {best_prec};  Acc.: {best_acc_hmc:.1%}; ECE: {best_ece_hmc:.1%}; NLL: {best_nll_hmc:.4}')
+    
+    
+    hmc_samples = torch.load('./Run_metrics/hmc_samples')
+    acc_hmc, ece_hmc, nll_hmc = metrics_hmc_samples(hmc_samples['ll_weights'], act_test, y_test)
+    
+    print(f'[HMC] Best on test: Acc.: {acc_hmc:.1%}; ECE: {ece_hmc:.1%}; NLL: {nll_hmc:.4}')
     
     #print(f"Mean HMC samples {hmc_samples['ll_weights'].mean(0)}")
 
 #plot_prior_vs_posterior_weights_pred(hmc_samples, data, ys, num_classes)
-
-
-
-
-
-
-

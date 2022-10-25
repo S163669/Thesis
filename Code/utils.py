@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import pyro
 import pyro.distributions as dist
 from netcal.metrics import ECE
+import torch.nn.functional as F
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pt'):
     
@@ -120,11 +121,50 @@ def predict(testloader, device, model, using_laplace=False, link_approx='mc', n_
     
     return preds, targets
 
-def predict_Lm1(coeffs, data):
+
+def get_act_Lm1(model, data_loader, device):
+    activation = {}
+    def get_activation(name):
+        def hook(model, input, output):
+            activation[name] = output.detach()
+        return hook
     
-    y = data['labels']
-    x = data['out_L-1']
+    model.module.bn1.register_forward_hook(get_activation('bn1'))
     
+    acts = []
+    ys = []
+    
+    with torch.no_grad():
+        model.eval()
+        for x, y in data_loader:
+    
+            output = model(x.to(device))
+            acts.append(activation['bn1'])
+            ys.append(y) 
+    
+    acts = torch.cat(acts, dim=0)
+    ys = torch.cat(ys)
+    
+    data = F.avg_pool2d(acts, 8)
+    data = data.view(-1, 64*4).cpu()
+    
+    return data, ys
+    
+
+def model_hmc(data, num_classes, labels, prec):
+    
+    pad_1 = torch.nn.ConstantPad1d((0,1), 1)
+    data = pad_1(data)
+    
+    dim = data.size()[1]*num_classes
+    coefs_mean = torch.zeros(dim)
+    coefs = pyro.sample('ll_weights', dist.Normal(coefs_mean, ((1/prec)**1/2)*torch.ones(dim)))  #Precision of 40 in paper
+
+    y = pyro.sample('y', dist.Categorical(logits=data @ coefs.reshape(-1,10)), obs=labels)
+    
+    return y
+
+def predict_Lm1(coeffs, x, y):
         
     pad_1 = torch.nn.ConstantPad1d((0,1), 1)
     x = pad_1(x)
@@ -138,30 +178,17 @@ def predict_Lm1(coeffs, data):
     
     nll_hmc = -torch.distributions.Categorical(class_prob).log_prob(y).mean()
     
-    return acc.item(), class_prob, nll_hmc, y
+    return acc.item(), class_prob, nll_hmc
 
-    
-def model_hmc(data, num_classes, labels):
-    
-    pad_1 = torch.nn.ConstantPad1d((0,1), 1)
-    data = pad_1(data)
-    
-    dim = data.size()[1]*num_classes
-    coefs_mean = torch.zeros(dim)
-    coefs = pyro.sample('ll_weights', dist.Normal(coefs_mean, ((1/40)**1/2)*torch.ones(dim)))  #Precision of 40 in paper
 
-    y = pyro.sample('y', dist.Categorical(logits=data @ coefs.reshape(-1,10)), obs=labels)
-    
-    return y
-
-def metrics_hmc_samples(samples, data):
+def metrics_hmc_samples(samples, x, y):
     
     accs = []
     sum_class_probs = 0
     
     for coeff in samples:
         
-        acc, class_probs, _ , y = predict_Lm1(coeff, data)
+        acc, class_probs, _  = predict_Lm1(coeff, x, y)
         accs.append(acc)
         sum_class_probs += class_probs
         

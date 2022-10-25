@@ -10,6 +10,9 @@ import os
 import torch
 import shutil
 import matplotlib.pyplot as plt
+import pyro
+import pyro.distributions as dist
+from netcal.metrics import ECE
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pt'):
     
@@ -92,7 +95,30 @@ def plot_prior_vs_posterior_weights_pred(hmc_samples, data, labels, num_classes)
     print(f'Probability mean for prior weight samples {torch.mean(prior_prob_mean).item()}')
     print(f'Probability mean for hmc weight samples {torch.mean(hmc_prob_mean).item()}')
     
+
+
+def predict(testloader, device, model, using_laplace=False, link_approx='mc', n_samples=20):
+
+    preds = []    
+    targets = []
+
+    for inputs, ys in testloader:
+        
+        inputs = inputs.to(device)
+
+        if using_laplace:
+            preds.append(model(inputs, link_approx=link_approx, n_samples=n_samples))
+        else:
+            model.eval()
+            preds.append(torch.softmax(model(inputs), dim=-1))
+        
+        targets.append(ys)
     
+    targets = torch.cat(targets, dim=0)
+    preds = torch.cat(preds).cpu()
+    
+    return preds, targets
+
 def predict_Lm1(coeffs, data):
     
     y = data['labels']
@@ -107,25 +133,45 @@ def predict_Lm1(coeffs, data):
     
     acc = sum(y_pred == y)/len(y)
     
-    probs_true = class_prob[range(len(y)),y]
+    #probs_true = class_prob[range(len(y)),y]
     
     nll_hmc = -torch.distributions.Categorical(class_prob).log_prob(y).mean()
     
-    return acc.item(), probs_true, nll_hmc
+    return acc.item(), class_prob, nll_hmc, y
+
     
+def model_hmc(data, num_classes, labels):
+    
+    pad_1 = torch.nn.ConstantPad1d((0,1), 1)
+    data = pad_1(data)
+    
+    dim = data.size()[1]*num_classes
+    coefs_mean = torch.zeros(dim)
+    coefs = pyro.sample('ll_weights', dist.Normal(coefs_mean, ((1/40)**1/2)*torch.ones(dim)))  #Precision of 40 in paper
+
+    y = pyro.sample('y', dist.Categorical(logits=data @ coefs.reshape(-1,10)), obs=labels)
+    
+    return y
+
+activation = {}
+def get_activation(name):
+    def hook(model, input, output):
+        activation[name] = output.detach()
+    return hook
+
 def metrics_hmc_samples(samples, data):
     
     accs = []
-    sum_probs_true = 0
+    sum_class_probs = 0
     
     for coeff in samples:
         
-        acc, probs_true, _ = predict_Lm1(coeff, data)
+        acc, class_probs, _ , y = predict_Lm1(coeff, data)
         accs.append(acc)
-        sum_probs_true += probs_true
+        sum_class_probs += class_probs
         
-    print(torch.sort(sum_probs_true/len(samples)))
-    nll = -torch.mean(torch.log(sum_probs_true/len(samples))).item()
+    nll = -torch.mean(torch.log(sum_class_probs[range(len(y)),y]/len(samples))).item()
+    ece = ECE(bins=15).measure(class_probs.numpy(), y.numpy())
     
-    return sum(accs)/len(accs), nll, sum_probs_true/len(samples)
+    return sum(accs)/len(accs), nll, ece
         

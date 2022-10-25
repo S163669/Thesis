@@ -154,12 +154,6 @@ def model_hmc(data, num_classes, labels):
     
     return y
 
-activation = {}
-def get_activation(name):
-    def hook(model, input, output):
-        activation[name] = output.detach()
-    return hook
-
 def metrics_hmc_samples(samples, data):
     
     accs = []
@@ -174,5 +168,5 @@ def metrics_hmc_samples(samples, data):
     nll = -torch.mean(torch.log(sum_class_probs[range(len(y)),y]/len(samples))).item()
     ece = ECE(bins=15).measure(class_probs.numpy(), y.numpy())
     
-    return sum(accs)/len(accs), nll, ece
+    return sum(accs)/len(accs), ece, nll
         

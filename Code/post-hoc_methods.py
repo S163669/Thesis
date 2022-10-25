@@ -11,7 +11,7 @@ import torch
 from models import WideResNet
 from dataloaders import load_cifar
 from netcal.metrics import ECE
-from utils import predict, plot_prior_vs_posterior_weights_pred, model_hmc, get_activation, metrics_hmc_samples
+from utils import predict, plot_prior_vs_posterior_weights_pred, model_hmc, metrics_hmc_samples
 import pyro
 import torch.nn.functional as F
 
@@ -44,7 +44,7 @@ if do_map:
     ece_map = ECE(bins=15).measure(probs_map.numpy(), targets_map.numpy())
     acc_map = sum(torch.argmax(probs_map, 1)==targets_map)/len(targets_map)
     nll_map = -torch.distributions.Categorical(probs_map).log_prob(targets_map).mean()
-    print(f'[MAP] Acc.: {acc_map}; ECE: {ece_map:.1%}; NLL: {nll_map}')
+    print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.4}')
 
 
 if do_laplace:
@@ -63,11 +63,16 @@ if do_laplace:
     la_samples = la.sample(600)
     torch.save(la_samples, './Run_metrics/la_samples')
 
-    print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.3}')
+    print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.4}')
     #print(f"Mean LA samples {la_samples.mean(0)}")
 
 if do_hmc:
+    
     activation = {}
+    def get_activation(name):
+        def hook(model, input, output):
+            activation[name] = output.detach()
+        return hook
     
     model.module.bn1.register_forward_hook(get_activation('bn1'))
     
@@ -97,8 +102,10 @@ if do_hmc:
     torch.save(hmc_samples, './Run_metrics/hmc_samples')
     
     data_test = torch.load(basepath + '/Datasets/output_data_L-1_test')
-    metrics_hmc_samples(hmc_samples['ll_weights'], data_test)
-
+    acc_hmc, ece_hmc, nll_hmc = metrics_hmc_samples(hmc_samples['ll_weights'], data_test)
+    
+    print(f'[HMC] Acc.: {acc_hmc:.1%}; ECE: {ece_hmc:.1%}; NLL: {nll_hmc:.4}')
+    
     #print(f"Mean HMC samples {hmc_samples['ll_weights'].mean(0)}")
 
 #plot_prior_vs_posterior_weights_pred(hmc_samples, data, ys, num_classes)

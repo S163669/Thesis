@@ -101,18 +101,19 @@ def predict(testloader, device, model, using_laplace=False, link_approx='mc', n_
 
     preds = []    
     targets = []
-
-    for inputs, ys in testloader:
-        
-        inputs = inputs.to(device)
-
-        if using_laplace:
-            preds.append(model(inputs, link_approx=link_approx, n_samples=n_samples))
-        else:
-            model.eval()
-            preds.append(torch.softmax(model(inputs), dim=-1))
-        
-        targets.append(ys)
+    
+    with torch.no_grad():
+        for inputs, ys in testloader:
+            
+            inputs = inputs.to(device)
+    
+            if using_laplace:
+                preds.append(model(inputs, link_approx=link_approx, n_samples=n_samples))
+            else:
+                model.eval()
+                preds.append(torch.softmax(model(inputs), dim=-1))
+            
+            targets.append(ys)
     
     targets = torch.cat(targets, dim=0)
     preds = torch.cat(preds).cpu()

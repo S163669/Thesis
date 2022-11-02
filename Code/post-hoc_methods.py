@@ -75,6 +75,10 @@ if do_laplace:
 
     print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.4}')
     #print(f"Mean LA samples {la_samples.mean(0)}")
+    
+    posterior_params = {'mean': la.mean, 'scale': la.posterior_scale}
+    torch.save(posterior_params, './Run_metrics/la_approx_posterior')
+
 
 if do_hmc:
     
@@ -121,14 +125,13 @@ if do_posterior_refinemenent and do_laplace and do_hmc:
     n_epochs = 20
     
     dim = hmc_samples['ll_weights'][0].shape[0]
-    base_dist_params = {'mean': la.mean, 'scale': la.posterior_scale}
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     optimizer = optim.Adam(lr = 0.001)
     #n_steps = epochs * len(train_loader)
     params_scheduler = {'optimizer': optimizer, 'T_max': n_epochs, 'eta_min': lr_min}
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_epochs, eta_min=lr_min)
-    nf = Normalizing_flow(dim, 'radial', 1, device, base_dist_params)
+    nf = Normalizing_flow(dim, 'radial', 1, device, posterior_params)
 
     svi = SVI(nf.target, nf.model, scheduler, loss=Trace_ELBO())
 
@@ -150,4 +153,4 @@ if do_posterior_refinemenent and do_laplace and do_hmc:
         plt.ylabel('losses')
         plt.title('Training loss of normalizing flow per epoch')
         plt.legend()
-        
+        plt.savefig(f'/home/clem/Documents/Thesis/Figures/Training_loss_nfs.pdf', bbox_inches='tight', format='pdf')        

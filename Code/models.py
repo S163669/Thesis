@@ -119,7 +119,7 @@ class Normalizing_flow(nn.Module):
         self.flow_len = flow_len
         self.device = device
         
-        self.base_dist = dist.Normal(base_dist_params['mean'], base_dist_params['scale']).to(device)
+        self.base_dist = dist.MultivariateNormal(base_dist_params['mean'], base_dist_params['covariance_m']).to(device)
         
         if nf_type == 'planar':
         

@@ -13,19 +13,28 @@ from dataloaders import load_cifar
 from netcal.metrics import ECE
 from utils import predict, plot_prior_vs_posterior_weights_pred, model_hmc, metrics_hmc_samples, get_act_Lm1
 import pyro
-
+from models import Normalizing_flow
+from pyro.infer import SVI, Trace_ELBO
+import pyro.optim as optim
+import matplotlib.pyplot as plt
 
 #basepath = '/home/clem/Documents/Thesis/'
 basepath = '/zhome/fa/5/117117/Thesis/'
 do_map = True
 do_laplace = True
 do_hmc = True
+do_posterior_refinemenent = True
+make_plots = True
+
 precs_prior_hmc = [1,2,4,8,16,32,64]
 
 dataset_choice = 'cifar10'
 torch.manual_seed = 12
 batch_nb = 128
 num_workers = 0
+
+if do_posterior_refinemenent and (not do_laplace or not do_hmc):
+    do_laplace, do_hmc = True, True
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = WideResNet(depth=16, num_classes=10, widen_factor=4, dropRate=0.0)
@@ -48,6 +57,7 @@ if do_map:
 
 
 if do_laplace:
+    
     la = Laplace(model, 'classification',
                  subset_of_weights='last_layer',
                  hessian_structure='full')
@@ -103,5 +113,41 @@ if do_hmc:
     print(f'[HMC] Best on test: Acc.: {acc_hmc:.1%}; ECE: {ece_hmc:.1%}; NLL: {nll_hmc:.4}')
     
     #print(f"Mean HMC samples {hmc_samples['ll_weights'].mean(0)}")
+    #plot_prior_vs_posterior_weights_pred(hmc_samples, data, ys, num_classes)
+    
+if do_posterior_refinemenent and do_laplace and do_hmc:
+    
+    lr_min = 1e-6
+    n_epochs = 20
+    
+    dim = hmc_samples['ll_weights'][0].shape[0]
+    base_dist_params = {'mean': la.mean, 'scale': la.posterior_scale}
+    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    optimizer = optim.Adam(lr = 0.001)
+    #n_steps = epochs * len(train_loader)
+    params_scheduler = {'optimizer': optimizer, 'T_max': n_epochs, 'eta_min': lr_min}
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_epochs, eta_min=lr_min)
+    nf = Normalizing_flow(dim, 'radial', 1, device, base_dist_params)
 
-#plot_prior_vs_posterior_weights_pred(hmc_samples, data, ys, num_classes)
+    svi = SVI(nf.target, nf.model, scheduler, loss=Trace_ELBO())
+
+    losses = []
+    for epoch in range(n_epochs):
+        
+        loss = svi.step(hmc_samples['ll_weights'])
+        scheduler.step()
+        losses.append(loss)
+    
+    refined_posterior_samples = nf.sample(600)
+    torch.save(hmc_samples, './Run_metrics/hmc_samples')
+    
+    if make_plots:
+        
+        plt.figure()
+        plt.plot(list(range(n_epochs)), losses, label='loss')
+        plt.xlabel('epochs')
+        plt.ylabel('losses')
+        plt.title('Training loss of normalizing flow per epoch')
+        plt.legend()
+        

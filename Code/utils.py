@@ -167,8 +167,9 @@ def model_hmc(data, num_classes, labels, prec):
 def predict_Lm1(coeffs, x, y):
         
     pad_1 = torch.nn.ConstantPad1d((0,1), 1)
+    # activation of layer L-1 with padded 1
     x = pad_1(x)
-    
+    # (observations x number of classes)
     class_prob = torch.softmax(x @ coeffs.reshape(-1,10), dim=1)
     y_pred = torch.argmax(class_prob, 1)
     
@@ -190,8 +191,11 @@ def metrics_hmc_samples(samples, x, y):
         
         acc, class_probs, _  = predict_Lm1(coeff, x, y)
         accs.append(acc)
+        # sum of (observation x number of classes) for each HMC sample
         sum_class_probs += class_probs
         
+    # Calculating 1/S*Sum_1^Ŝ(p(y* | f(x*)))) for each x* and taking log to get log(p(y* |x*, D)) 
+    # then taking negative of the mean for each x*.
     nll = -torch.mean(torch.log(sum_class_probs[range(len(y)),y]/len(samples))).item()
     ece = ECE(bins=15).measure(class_probs.numpy(), y.numpy())
     

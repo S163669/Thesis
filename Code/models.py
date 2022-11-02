@@ -10,6 +10,8 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import pyro.distributions as dist
+import pyro
 
 
 class BasicBlock(nn.Module):
@@ -104,3 +106,73 @@ def wrn(**kwargs):
     """
     model = WideResNet(**kwargs)
     return model
+
+
+class Normalizing_flow(nn.Module):
+    
+    def __init__(self, input_dim, nf_type, flow_len, device, base_dist_params):
+        
+        super(Normalizing_flow, self).__init__()
+        
+        self.input_dim = input_dim
+        self.nf_type = nf_type
+        self.flow_len = flow_len
+        self.device = device
+        
+        self.base_dist = dist.Normal(base_dist_params['mean'], base_dist_params['scale']).to(device)
+        
+        if nf_type == 'planar':
+        
+            trans = dist.transforms.Planar
+            
+        elif nf_type == 'spline':
+            
+            trans = dist.transforms.Spline
+        
+        elif nf_type == 'radial':
+            
+            trans = dist.transforms.Radial
+            
+        else:
+            
+            print('The inputed flow type is not valid, the type will be set to radial by default.')
+            trans = dist.transforms.Radial
+            
+        self.transforms = [trans(input_dim) for _ in range(flow_len)]
+        
+        self.flow_dist = dist.TransformedDistribution(self.base_dist, self.transforms)
+        
+    
+    def model(self, x=None, p=None):
+        """
+        p isn't used but must be provided due to the way the pyro framework is built.
+        This part represents the variational distribution called guide in pyro vocabulary
+        """
+        
+        N = len(x) if x is not None else None
+        pyro.module("nf", nn.ModuleList(self.transforms).to(self.device))
+        with pyro.plate("data", N):
+            obs = pyro.sample("latent", self.flow_dist)
+                
+    def target(self, x, p=None):
+        """
+        This part represents the target distribution.
+        p(x,z), but x is not required if there is a true density function (p_z in this case)
+        
+        1. Sample Z ~ p_z
+        2. Score it's likelihood against p_z
+        """
+        with pyro.plate("data", x.shape[0]):
+            #z = pyro.sample("latent", p)
+            pyro.sample("obs", p, obs=x.reshape(-1, self.dim))
+    
+    
+    def sample(self, num_samples):
+        
+        return self.flow_dist.sample(torch.Size([num_samples]))
+    
+    def log_prob(self, z):
+        """
+        Returns log q(z|x) for z (assuming no x is required)
+        """
+        return self.flow_dist.log_prob(z)

@@ -103,7 +103,7 @@ class WideResNet(nn.Module):
     
     def forward(self, x):
         
-        return self.fc(self.get_lhl_activation(x))
+        return self.fc(self.get_lhl_act(x))
 
 def wrn(**kwargs):
     """

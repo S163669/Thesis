@@ -189,7 +189,7 @@ def predict_Lm1(coeffs, x, y):
     return acc.item(), class_prob, nll_hmc
 
 
-def metrics_hmc_samples(samples, x, y):
+def metrics_ll_weight_samples(samples, x, y):
     
     accs = []
     sum_class_probs = 0

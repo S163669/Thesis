@@ -11,7 +11,7 @@ import torch
 from models import WideResNet
 from dataloaders import load_cifar
 from netcal.metrics import ECE
-from utils import predict, plot_prior_vs_posterior_weights_pred, model_hmc, metrics_hmc_samples, get_act_Lm1
+from utils import predict, plot_prior_vs_posterior_weights_pred, model_hmc, metrics_ll_weight_samples, get_act_Lm1
 import pyro
 from models import Normalizing_flow
 from pyro.infer import SVI, Trace_ELBO
@@ -98,7 +98,7 @@ if do_hmc:
 
         hmc_samples = mcmc.get_samples(600)
         
-        acc_hmc, ece_hmc, nll_hmc = metrics_hmc_samples(hmc_samples['ll_weights'], act_val, y_val)
+        acc_hmc, ece_hmc, nll_hmc = metrics_ll_weight_samples(hmc_samples['ll_weights'], act_val, y_val)
         
         if nll_hmc < best_nll_hmc:
             
@@ -113,7 +113,7 @@ if do_hmc:
     
     
     hmc_samples = torch.load('./Run_metrics/hmc_samples')
-    acc_hmc, ece_hmc, nll_hmc = metrics_hmc_samples(hmc_samples['ll_weights'], act_test, y_test)
+    acc_hmc, ece_hmc, nll_hmc = metrics_ll_weight_samples(hmc_samples['ll_weights'], act_test, y_test)
     
     print(f'[HMC] Best on test: Acc.: {acc_hmc:.1%}; ECE: {ece_hmc:.1%}; NLL: {nll_hmc:.4}')
     
@@ -124,6 +124,7 @@ if do_posterior_refinemenent and do_laplace and do_hmc:
     
     lr_min = 1e-6
     n_epochs = 20
+    flow_len = 1
     
     dim = hmc_samples['ll_weights'][0].shape[0]
     
@@ -132,7 +133,7 @@ if do_posterior_refinemenent and do_laplace and do_hmc:
     #n_steps = epochs * len(train_loader)
     params_scheduler = {'optimizer': optimizer, 'optim_args': {'T_max': n_epochs, 'eta_min': lr_min}}
     scheduler = optim.CosineAnnealingLR(params_scheduler)
-    nf = Normalizing_flow(dim, 'radial', 1, device, posterior_params)
+    nf = Normalizing_flow(dim, 'radial', flow_len, device, posterior_params)
 
     svi = SVI(nf.model, nf.guide, scheduler, loss=Trace_ELBO())
 
@@ -144,7 +145,11 @@ if do_posterior_refinemenent and do_laplace and do_hmc:
         losses.append(loss)
     
     refined_posterior_samples = nf.sample(600)
-    torch.save(hmc_samples, './Run_metrics/hmc_samples')
+    torch.save(refined_posterior_samples, './Run_metrics/refined_posterior_samples_{flow_len}')
+    
+    acc_refp, ece_refp, nll_refp = metrics_ll_weight_samples(refined_posterior_samples, act_test, y_test)
+    
+    print(f'[Refined posterior nf_len: {flow_len}] Best on test: Acc.: {acc_refp:.1%}; ECE: {ece_refp:.1%}; NLL: {nll_refp:.4}')
     
     if make_plots:
         

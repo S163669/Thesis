@@ -122,31 +122,38 @@ def predict(testloader, device, model, using_laplace=False, link_approx='mc', n_
     return preds, targets
 
 
-def get_act_Lm1(model, data_loader, device):
-    activation = {}
-    def get_activation(name):
-        def hook(model, input, output):
-            activation[name] = output.detach()
-        return hook
+def get_act_Lm1(model, data_loader, device, integrated_in_model=True):
     
-    model.module.bn1.register_forward_hook(get_activation('bn1'))
-    
-    acts = []
+    if not integrated_in_model:
+        activation = {}
+        def get_activation(name):
+            def hook(model, input, output):
+                activation[name] = output.detach()
+            return hook
+        
+        model.module.bn1.register_forward_hook(get_activation('bn1'))
+        
+    data = []
     ys = []
     
     with torch.no_grad():
         model.eval()
         for x, y in data_loader:
-    
-            output = model(x.to(device))
-            acts.append(activation['bn1'])
+            
+            if integrated_in_model:  
+                out = model.get_lhl_act(x.to(device))
+                data.append(out)
+            else:    
+                output = model(x.to(device))
+                data.append(activation['bn1'])
             ys.append(y) 
     
-    acts = torch.cat(acts, dim=0)
+    data = torch.cat(data, dim=0)
     ys = torch.cat(ys)
     
-    data = F.avg_pool2d(acts, 8)
-    data = data.view(-1, 64*4).cpu()
+    if not integrated_in_model:
+        data = F.avg_pool2d(data, 8)
+        data = data.view(-1, 64*4).cpu()
     
     return data, ys
     

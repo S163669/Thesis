@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pyro.distributions as dist
 import pyro
-
+from utils import predict_Lm1
 
 class BasicBlock(nn.Module):
     def __init__(self, in_planes, out_planes, stride, dropRate=0.0):
@@ -83,8 +83,8 @@ class WideResNet(nn.Module):
                 m.bias.data.zero_()
             elif isinstance(m, nn.Linear):
                 m.bias.data.zero_()
-
-    def forward(self, x):
+    
+    def get_lhl_act(self, x):
         
         out = self.conv1(x)
         
@@ -98,7 +98,12 @@ class WideResNet(nn.Module):
         
         out = F.avg_pool2d(out, 8)
         out = out.view(-1, self.nChannels)
-        return self.fc(out)
+        
+        return out
+    
+    def forward(self, x):
+        
+        return self.fc(self.get_lhl_activation(x))
 
 def wrn(**kwargs):
     """
@@ -119,7 +124,7 @@ class Normalizing_flow(nn.Module):
         self.flow_len = flow_len
         self.device = device
         
-        self.base_dist = dist.MultivariateNormal(base_dist_params['mean'], base_dist_params['covariance_m']).to(device)
+        self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), base_dist_params['covariance_m'].to(device))
         
         if nf_type == 'planar':
         
@@ -143,7 +148,7 @@ class Normalizing_flow(nn.Module):
         self.flow_dist = dist.TransformedDistribution(self.base_dist, self.transforms)
         
     
-    def model(self, x=None, p=None):
+    def guide(self, x=None, p=None):
         """
         p isn't used but must be provided due to the way the pyro framework is built.
         This part represents the variational distribution called guide in pyro vocabulary
@@ -152,9 +157,9 @@ class Normalizing_flow(nn.Module):
         N = len(x) if x is not None else None
         pyro.module("nf", nn.ModuleList(self.transforms).to(self.device))
         with pyro.plate("data", N):
-            obs = pyro.sample("latent", self.flow_dist)
+            obs = pyro.sample("weights", self.flow_dist)
                 
-    def target(self, x, p=None):
+    def model(self, x, y):
         """
         This part represents the target distribution.
         p(x,z), but x is not required if there is a true density function (p_z in this case)
@@ -163,8 +168,9 @@ class Normalizing_flow(nn.Module):
         2. Score it's likelihood against p_z
         """
         with pyro.plate("data", x.shape[0]):
-            #z = pyro.sample("latent", p)
-            pyro.sample("obs", p, obs=x.reshape(-1, self.dim))
+            ws = pyro.sample("weights", self.flow_dist)
+            _, class_probs, _  = predict_Lm1(ws, x, y)
+            pyro.sample("obs", dist.Categorical(probs=class_probs), obs=y)
     
     
     def sample(self, num_samples):

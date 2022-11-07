@@ -44,6 +44,7 @@ model = torch.nn.DataParallel(model).to(device)
 checkpoint_bestmodel = torch.load(basepath + 'checkpoints/WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5/checkpoint.pt')
 
 model.load_state_dict(checkpoint_bestmodel['state_dict'])
+model.eval()
 
 train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers, batch_size_val=batch_nb, val_size=2000)
 
@@ -133,12 +134,12 @@ if do_posterior_refinemenent and do_laplace and do_hmc:
     scheduler = optim.CosineAnnealingLR(params_scheduler)
     nf = Normalizing_flow(dim, 'radial', 1, device, posterior_params)
 
-    svi = SVI(nf.target, nf.model, scheduler, loss=Trace_ELBO())
+    svi = SVI(nf.model, nf.guide, scheduler, loss=Trace_ELBO())
 
     losses = []
     for epoch in range(n_epochs):
         
-        loss = svi.step(hmc_samples['ll_weights'])
+        loss = svi.step(act_train, y_train)
         scheduler.step()
         losses.append(loss)
     

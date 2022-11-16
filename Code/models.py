@@ -115,7 +115,7 @@ def wrn(**kwargs):
 
 class Normalizing_flow(nn.Module):
     
-    def __init__(self, input_dim, nf_type, flow_len, device, base_dist_params):
+    def __init__(self, input_dim, nf_type, flow_len, device, base_dist_params, num_classes):
         
         super(Normalizing_flow, self).__init__()
         
@@ -123,6 +123,7 @@ class Normalizing_flow(nn.Module):
         self.nf_type = nf_type
         self.flow_len = flow_len
         self.device = device
+        self.num_classes = num_classes
         
         self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), base_dist_params['covariance_m'].to(device))
         
@@ -154,10 +155,9 @@ class Normalizing_flow(nn.Module):
         This part represents the variational distribution called guide in pyro vocabulary
         """
         
-        N = len(x) if x is not None else None
+        #N = len(x) if x is not None else None
         pyro.module("nf", nn.ModuleList(self.transforms).to(self.device))
-        with pyro.plate("data", N):
-            obs = pyro.sample("weights", self.flow_dist)
+        obs = pyro.sample("weights", self.flow_dist)
                 
     def model(self, x, y):
         """
@@ -167,9 +167,10 @@ class Normalizing_flow(nn.Module):
         1. Sample Z ~ p_z
         2. Score it's likelihood against p_z
         """
+        
+        ws = pyro.sample("weights", self.flow_dist)
+        _, class_probs, _  = predict_Lm1(ws, x, y, self.num_classes)
         with pyro.plate("data", x.shape[0]):
-            ws = pyro.sample("weights", self.flow_dist)
-            _, class_probs, _  = predict_Lm1(ws, x, y)
             pyro.sample("obs", dist.Categorical(probs=class_probs), obs=y)
     
     

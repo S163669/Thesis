@@ -14,6 +14,9 @@ import pyro
 import pyro.distributions as dist
 from netcal.metrics import ECE
 import torch.nn.functional as F
+import numpy as np
+from sklearn import metrics
+from scipy.spatial.distance import pdist
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pt'):
     
@@ -100,7 +103,7 @@ def plot_prior_vs_posterior_weights_pred(hmc_samples, data, labels, num_classes)
 
 def predict(testloader, device, model, using_laplace=False, link_approx='mc', n_samples=20):
 
-    preds = []    
+    preds = []
     targets = []
     
     with torch.no_grad():
@@ -141,21 +144,21 @@ def get_act_Lm1(model, data_loader, device, integrated_in_model=True):
         for x, y in data_loader:
             
             if integrated_in_model:  
-                out = model.get_lhl_act(x.to(device))
+                out = model.module.get_lhl_act(x.to(device))
                 data.append(out)
-            else:    
+            else:
                 output = model(x.to(device))
                 data.append(activation['bn1'])
             ys.append(y) 
     
     data = torch.cat(data, dim=0)
-    ys = torch.cat(ys)
+    ys = torch.cat(ys, dim=0)
     
     if not integrated_in_model:
         data = F.avg_pool2d(data, 8)
-        data = data.view(-1, 64*4).cpu()
+        data = data.view(-1, 64*4)
     
-    return data, ys
+    return data.cpu(), ys
     
 
 def model_hmc(data, num_classes, labels, prec):
@@ -165,19 +168,27 @@ def model_hmc(data, num_classes, labels, prec):
     
     dim = data.size()[1]*num_classes
     coefs_mean = torch.zeros(dim)
-    coefs = pyro.sample('ll_weights', dist.Normal(coefs_mean, ((1/prec)**1/2)*torch.ones(dim)))  #Precision of 40 in paper
+    # Added to_event(1) to make samples dependent.
+    coefs = pyro.sample('ll_weights', dist.Normal(coefs_mean, ((1/prec)**1/2)*torch.ones(dim))).to_event(1)  #Precision of 40 in paper
 
     y = pyro.sample('y', dist.Categorical(logits=data @ coefs.reshape(-1,10)), obs=labels)
     
     return y
 
-def predict_Lm1(coeffs, x, y):
+def predict_Lm1(coeffs, x, y, num_classes):
         
-    pad_1 = torch.nn.ConstantPad1d((0,1), 1)
+    #pad_1 = torch.nn.ConstantPad1d((0,1), 1)
     # activation of layer L-1 with padded 1
-    x = pad_1(x)
+    #x = pad_1(x)
     # (observations x number of classes)
-    class_prob = torch.softmax(x @ coeffs.reshape(-1,10), dim=1)
+    #class_prob = torch.softmax(x @ coeffs.reshape(-1,10), dim=1)
+    num_features = x.shape[1]
+    # The below is matching the way pytorch.nn.utils.parameters_to_vector is arranging the parameters
+    act_w = coeffs[:num_features*num_classes].reshape(num_classes, num_features)
+    bias_w = coeffs[num_features*num_classes:]
+    
+    class_prob = x @ act_w.T + bias_w
+    
     y_pred = torch.argmax(class_prob, 1)
     
     acc = sum(y_pred == y)/len(y)
@@ -189,14 +200,14 @@ def predict_Lm1(coeffs, x, y):
     return acc.item(), class_prob, nll_hmc
 
 
-def metrics_ll_weight_samples(samples, x, y):
+def metrics_ll_weight_samples(samples, x, y, num_classes):
     
     accs = []
     sum_class_probs = 0
     
     for coeff in samples:
         
-        acc, class_probs, _  = predict_Lm1(coeff, x, y)
+        acc, class_probs, _  = predict_Lm1(coeff, x, y, num_classes)
         accs.append(acc)
         # sum of (observation x number of classes) for each HMC sample
         sum_class_probs += class_probs
@@ -207,4 +218,26 @@ def metrics_ll_weight_samples(samples, x, y):
     ece = ECE(bins=15).measure(class_probs.numpy(), y.numpy())
     
     return sum(accs)/len(accs), ece, nll
+
+def mmd_rbf(X, Y):
+    """
+    MMD using rbf (gaussian) kernel (i.e., k(x,y) = exp(-gamma * ||x-y||^2 / 2)).
+    Source: https://github.com/jindongwang/transferlearning
+    Arguments:
+        X {[n_sample1, dim]} -- [X matrix]
+        Y {[n_sample2, dim]} -- [Y matrix]
+    Returns:
+        [scalar] -- [MMD value]
+    """
+    # Median heuristic --- use some hold-out samples
+    all_samples = np.concatenate([X[:50], Y[:50]], 0)
+    pdists = pdist(all_samples)
+    sigma = np.median(pdists)
+    gamma=1/(sigma**2)
+
+    XX = metrics.pairwise.rbf_kernel(X, X, gamma)
+    YY = metrics.pairwise.rbf_kernel(Y, Y, gamma)
+    XY = metrics.pairwise.rbf_kernel(X, Y, gamma)
+
+    return XX.mean() + YY.mean() - 2 * XY.mean()
         

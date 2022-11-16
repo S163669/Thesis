@@ -187,7 +187,7 @@ def predict_Lm1(coeffs, x, y, num_classes):
     act_w = coeffs[:num_features*num_classes].reshape(num_classes, num_features)
     bias_w = coeffs[num_features*num_classes:]
     
-    class_prob = x @ act_w.T + bias_w
+    class_prob = torch.softmax(x @ act_w.T + bias_w, dim=1)
     
     y_pred = torch.argmax(class_prob, 1)
     

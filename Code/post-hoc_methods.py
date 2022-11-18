@@ -34,9 +34,6 @@ torch.manual_seed = 12
 batch_nb = 128
 num_workers = 0
 
-if do_posterior_refinemenent and (not do_laplace or not do_hmc):
-    do_laplace, do_hmc = True, False
-
 train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers, batch_size_val=batch_nb, val_size=2000)
 
 
@@ -122,9 +119,7 @@ if do_hmc:
     #print(f"Mean HMC samples {hmc_samples['ll_weights'].mean(0)}")
     #plot_prior_vs_posterior_weights_pred(hmc_samples, data, ys, num_classes)
 
-do_hmc = True
-
-if do_posterior_refinemenent and do_laplace and do_hmc:
+if do_posterior_refinemenent:
     
     n_epochs = 20
     flow_len = 1
@@ -132,6 +127,9 @@ if do_posterior_refinemenent and do_laplace and do_hmc:
     if 'act_train' not in locals():
         act_train, y_train = get_act_Lm1(model, train_loader, device)
         act_test, y_test = get_act_Lm1(model, test_loader, device)
+        
+    if posterior_params not in locals():
+        posterior_params = torch.load('./Run_metrics/la_approx_posterior')
     
     dim = (act_train.shape[1] + 1)*10   # +1 for bias *10 for number of weights per hidden unit    
     
@@ -149,11 +147,15 @@ if do_posterior_refinemenent and do_laplace and do_hmc:
 
     losses = []
     for epoch in range(n_epochs):
+        print(f'epoch: {epoch}')
         epoch_loss = 0
+        
         for x, y in train_loader_act:
             loss = svi.step(x.to(device), y.to(device))
             scheduler.step()
             epoch_loss += loss
+            
+        print(f'loss: {epoch_loss}')
         losses.append(epoch_loss)
     
     refined_posterior_samples = nf.sample(600)

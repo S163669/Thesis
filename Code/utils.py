@@ -163,29 +163,34 @@ def get_act_Lm1(model, data_loader, device, integrated_in_model=True):
 
 def model_hmc(data, num_classes, labels, prec):
     
-    pad_1 = torch.nn.ConstantPad1d((0,1), 1)
-    data = pad_1(data)
-    
-    dim = data.size()[1]*num_classes
+    #pad_1 = torch.nn.ConstantPad1d((0,1), 1)
+    #data = pad_1(data)
+    num_features = data.shape[1]
+    dim = (num_features + 1)*10
+    #dim = data.size()[1]*num_classes
     coefs_mean = torch.zeros(dim)
     # Added to_event(1) to make samples dependent.
     coefs = pyro.sample('ll_weights', dist.Normal(coefs_mean, ((1/prec)**1/2)*torch.ones(dim))).to_event(1)  #Precision of 40 in paper
-
-    y = pyro.sample('y', dist.Categorical(logits=data @ coefs.reshape(-1,10)), obs=labels)
+    
+    act_w = coefs[:num_features*num_classes].reshape(num_classes, num_features)
+    bias_w = coefs[num_features*num_classes:]
+    
+    y = pyro.sample('y', dist.Categorical(logits=data @ act_w.T + bias_w), obs=labels)
     
     return y
 
-def predict_Lm1(coeffs, x, y, num_classes):
+
+def predict_Lm1(coefs, x, y, num_classes):
         
     #pad_1 = torch.nn.ConstantPad1d((0,1), 1)
     # activation of layer L-1 with padded 1
     #x = pad_1(x)
     # (observations x number of classes)
-    #class_prob = torch.softmax(x @ coeffs.reshape(-1,10), dim=1)
+    #class_prob = torch.softmax(x @ coefs.reshape(-1,10), dim=1)
     num_features = x.shape[1]
     # The below is matching the way pytorch.nn.utils.parameters_to_vector is arranging the parameters
-    act_w = coeffs[:num_features*num_classes].reshape(num_classes, num_features)
-    bias_w = coeffs[num_features*num_classes:]
+    act_w = coefs[:num_features*num_classes].reshape(num_classes, num_features)
+    bias_w = coefs[num_features*num_classes:]
     
     class_prob = torch.softmax(x @ act_w.T + bias_w, dim=1)
     

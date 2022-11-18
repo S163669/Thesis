@@ -42,7 +42,7 @@ weight_decay = 5e-4
 if opt_choice == 'Adam':
     model_params = f'WideResNet-{depth}-{widen_factor}_MAP_Adam_lr_{lr}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
 else:
-    lr_min = 1e-5
+    lr_min = 1e-6
     model_params = f'WideResNet-{depth}-{widen_factor}_MAP_SGDNesterov_lr_{lr}_lr_min_{lr_min}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
 
 checkpoint_path = os.path.join(checkpoint_path, model_params)

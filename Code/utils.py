@@ -170,7 +170,7 @@ def model_hmc(data, num_classes, labels, prec):
     #dim = data.size()[1]*num_classes
     coefs_mean = torch.zeros(dim)
     # Added to_event(1) to make samples dependent.
-    coefs = pyro.sample('ll_weights', dist.Normal(coefs_mean, ((1/prec)**1/2)*torch.ones(dim))).to_event(1)  #Precision of 40 in paper
+    coefs = pyro.sample('ll_weights', dist.Normal(coefs_mean, ((1/prec)**1/2)*torch.ones(dim)).to_event(1))  #Precision of 40 in paper
     
     act_w = coefs[:num_features*num_classes].reshape(num_classes, num_features)
     bias_w = coefs[num_features*num_classes:]
@@ -181,7 +181,7 @@ def model_hmc(data, num_classes, labels, prec):
 
 
 def predict_Lm1(coefs, x, y, num_classes):
-        
+    
     #pad_1 = torch.nn.ConstantPad1d((0,1), 1)
     # activation of layer L-1 with padded 1
     #x = pad_1(x)

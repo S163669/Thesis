@@ -24,8 +24,8 @@ basepath = '/home/clem/Documents/Thesis/'
 do_map = True
 do_laplace = True
 do_hmc = False
-do_posterior_refinemenent = False
-make_plots = True
+do_posterior_refinemenent = True
+make_plots = False
 
 precs_prior_hmc = [4.5]
 
@@ -42,7 +42,7 @@ model = WideResNet(depth=16, num_classes=num_classes, widen_factor=4, dropRate=0
 model = torch.nn.DataParallel(model).to(device)
 
 #checkpoint_bestmodel = torch.load('/home/clem/Documents/Thesis/checkpoints/WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_16_epochs_150_wd_0.0005/model_best.pt')
-checkpoint_bestmodel = torch.load(basepath + 'checkpoints/WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5/checkpoint.pt')
+checkpoint_bestmodel = torch.load(basepath + f'checkpoints/{dataset_choice}/'+'WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5/checkpoint.pt')
 
 model.load_state_dict(checkpoint_bestmodel['state_dict'])
 model.eval()

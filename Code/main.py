@@ -62,7 +62,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #   mkdir_p(args.checkpoint)
 
 # Datasum_probs_true/len(samples)
-train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_size, num_workers, batch_size_val=batch_size, val_size=2000, data_augmentation=True)
+train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_size, num_workers, batch_size_val=batch_size,
+                                                                val_size=2000, data_augmentation=True, normalize=False)
 
 # Model
 model = WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0.0)
@@ -116,7 +117,7 @@ for epoch in pbar:
             'acc': val_acc,
             'best_acc': best_acc,
             'optimizer' : optimizer.state_dict(),
-        }, is_best, checkpoint=checkpoint_path)
+        }, is_best, checkpoint=checkpoint_path + f'/{dataset_choice}')
 
 _ , test_acc = solver.test(test_loader) 
 metrics['test_acc'] = test_acc

@@ -18,22 +18,22 @@ import torchvision.datasets as datasets
 import torch.utils.data as data
 import torch
 
-def load_cifar(dataset_choice, path, batch_size="fullbatch", num_workers=0, batch_size_val="fullbatch", val_size=2000, data_augmentation=True):
+def load_cifar(dataset_choice, path, batch_size="fullbatch", num_workers=0, batch_size_val="fullbatch", val_size=2000, data_augmentation=True, normalize=True):
     #batch_size_val was set to 512
     mean = [x / 255 for x in [125.3, 123.0, 113.9]]
     std = [x / 255 for x in [63.0, 62.1, 66.7]]
     
+    transform_base = [transforms.ToTensor()]
+    if normalize:
+        transform_base.append(transforms.Normalize(mean, std))
     if data_augmentation:
-        train_transforms = [transforms.RandomHorizontalFlip(), transforms.RandomCrop(32, padding=4), transforms.ToTensor(), transforms.Normalize(mean, std),]
+        train_transforms = [transforms.RandomHorizontalFlip(), transforms.RandomCrop(32, padding=4),] + transform_base
     else:
-        train_transforms = [transforms.ToTensor(), transforms.Normalize(mean, std),]
+        train_transforms = transform_base
     
     transform_train = transforms.Compose(train_transforms)
     #transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean, std),
-    ])
+    transform_test = transforms.Compose(transform_base)
     if dataset_choice == 'cifar10':
         dataloader = datasets.CIFAR10
         num_classes = 10

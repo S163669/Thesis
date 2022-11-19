@@ -40,12 +40,18 @@ lr = 1e-1
 weight_decay = 5e-4
 
 if opt_choice == 'Adam':
-    model_params = f'WideResNet-{depth}-{widen_factor}_MAP_Adam_lr_{lr}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
+    if dataset_choice == 'f-mnist':
+        model_params = f'LeNet_MAP_Adam_lr_{lr}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
+    else:
+        model_params = f'WideResNet-{depth}-{widen_factor}_MAP_Adam_lr_{lr}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
 else:
     lr_min = 1e-6
-    model_params = f'WideResNet-{depth}-{widen_factor}_MAP_SGDNesterov_lr_{lr}_lr_min_{lr_min}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
+    if dataset_choice == 'f-mnist':
+        model_params = f'LeNet_MAP_SGDNesterov_lr_{lr}_lr_min_{lr_min}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
+    else:
+        model_params = f'WideResNet-{depth}-{widen_factor}_MAP_SGDNesterov_lr_{lr}_lr_min_{lr_min}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
 
-checkpoint_path = os.path.join(checkpoint_path, model_params)
+checkpoint_path = os.path.join(checkpoint_path + f'/{dataset_choice}', model_params)
 
 assert dataset_choice == 'cifar10' or dataset_choice == 'cifar100', 'Dataset can only be cifar10 or cifar100.'
 
@@ -56,7 +62,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #   mkdir_p(args.checkpoint)
 
 # Datasum_probs_true/len(samples)
-train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_size, num_workers, batch_size_val=batch_size, val_size=2000)
+train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_size, num_workers, batch_size_val=batch_size, val_size=2000, data_augmentation=True)
 
 # Model
 model = WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0.0)
@@ -114,7 +120,7 @@ for epoch in pbar:
 
 _ , test_acc = solver.test(test_loader) 
 metrics['test_acc'] = test_acc
-metrics_path = os.path.join('Run_metrics', model_params)
+metrics_path = os.path.join('Run_metrics' + f'/{dataset_choice}', model_params)
 
 if not os.path.exists(metrics_path):
     os.makedirs(metrics_path)

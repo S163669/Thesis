@@ -34,7 +34,7 @@ torch.manual_seed = 12
 batch_nb = 128
 num_workers = 0
 
-train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers, batch_size_val=batch_nb, val_size=2000)
+train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers, batch_size_val=batch_nb, val_size=2000, data_augmentation=False)
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -128,7 +128,7 @@ if do_posterior_refinemenent:
         act_train, y_train = get_act_Lm1(model, train_loader, device)
         act_test, y_test = get_act_Lm1(model, test_loader, device)
         
-    if posterior_params not in locals():
+    if 'posterior_params' not in locals():
         posterior_params = torch.load('./Run_metrics/la_approx_posterior')
     
     dim = (act_train.shape[1] + 1)*10   # +1 for bias *10 for number of weights per hidden unit    
@@ -159,7 +159,7 @@ if do_posterior_refinemenent:
         losses.append(epoch_loss)
     
     refined_posterior_samples = nf.sample(600)
-    torch.save(refined_posterior_samples, './Run_metrics/refined_posterior_samples_{flow_len}')
+    torch.save(refined_posterior_samples, './Run_metrics/refined_posterior_samples_{flow_len}_epochs_{n_epochs}')
     
     acc_refp, ece_refp, nll_refp = metrics_ll_weight_samples(refined_posterior_samples.cpu(), act_test, y_test, num_classes)
     

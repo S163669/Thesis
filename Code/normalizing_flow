@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Oct 28 23:40:16 2022
+
+@author: clem
+"""
+# https://bmazoure.github.io/posts/nf-in-pyro/
+# https://docs.pyro.ai/en/dev/_modules/pyro/infer/svi.html#SVI
+
+from models import Normalizing_flow
+import torch
+from torch import nn
+from pyro.infer import SVI, Trace_ELBO
+import pyro.optim as optim
+import pyro.distributions as dist
+import pyro
+
+
+"""
+dim = 2700
+
+base_dist = dist.Normal(torch.zeros(2), torch.ones(2))
+radial_transform = dist.transforms.Radial(dim)
+flow_dist = dist.TransformedDistribution(base_dist, [radial_transform])
+
+##time
+steps = 1 if smoke_test else 5001
+dataset = torch.tensor(X, dtype=torch.float)
+optimizer = torch.optim.Adam(radial_transform.parameters(), lr=5e-3)
+for step in range(steps+1):
+    optimizer.zero_grad()
+    loss = -flow_dist.log_prob(dataset).mean()
+    loss.backward()
+    optimizer.step()
+    flow_dist.clear_cache()
+
+    if step % 500 == 0:
+        print('step: {}, loss: {}'.format(step, loss.item()))
+
+X_flow = flow_dist.sample(torch.Size([1000,])).detach().numpy()
+"""
+
+lr_min = 1e-6
+n_epochs = 20
+dim = 2000
+base_dist_params = {'mean': 1, 'std': 1}
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+optimizer = optim.Adam(lr = 0.001)
+#n_steps = epochs * len(train_loader)
+params_scheduler = {'optimizer': optimizer, 'T_max': n_epochs, 'eta_min': lr_min}
+scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_epochs, eta_min=lr_min)
+nf = Normalizing_flow(dim, 'radial', 1, device, base_dist_params)
+
+svi = SVI(nf.target, nf.model, scheduler, loss=Trace_ELBO())
+
+for epoch in range(n_epochs):
+    svi.step(x, p)
+    scheduler.step()
+    
+
+
+                
+        
+            
+        
+        

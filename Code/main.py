@@ -117,7 +117,7 @@ for epoch in pbar:
             'acc': val_acc,
             'best_acc': best_acc,
             'optimizer' : optimizer.state_dict(),
-        }, is_best, checkpoint=checkpoint_path + f'/{dataset_choice}')
+        }, is_best, checkpoint=checkpoint_path)
 
 _ , test_acc = solver.test(test_loader) 
 metrics['test_acc'] = test_acc

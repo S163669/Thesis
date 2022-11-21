@@ -7,6 +7,7 @@ Created on Thu Sep 15 11:13:12 2022
 """
 
 import os
+import math
 import torch
 import shutil
 import matplotlib.pyplot as plt
@@ -170,7 +171,7 @@ def model_hmc(data, num_classes, labels, prec):
     #dim = data.size()[1]*num_classes
     coefs_mean = torch.zeros(dim)
     # Added to_event(1) to make samples dependent.
-    coefs = pyro.sample('ll_weights', dist.Normal(coefs_mean, ((1/prec)**1/2)*torch.ones(dim)).to_event(1))  #Precision of 40 in paper
+    coefs = pyro.sample('ll_weights', dist.Normal(coefs_mean, math.sqrt(1/prec)).to_event(1))  #Precision of 40 in paper
     
     act_w = coefs[:num_features*num_classes].reshape(num_classes, num_features)
     bias_w = coefs[num_features*num_classes:]

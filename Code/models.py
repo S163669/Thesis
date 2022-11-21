@@ -115,7 +115,7 @@ def wrn(**kwargs):
 
 class Normalizing_flow(nn.Module):
     
-    def __init__(self, input_dim, nf_type, flow_len, device, base_dist_params, num_classes):
+    def __init__(self, input_dim, nf_type, flow_len, device, base_dist_params, num_classes, prior_prec):
         
         super(Normalizing_flow, self).__init__()
         
@@ -124,6 +124,7 @@ class Normalizing_flow(nn.Module):
         self.flow_len = flow_len
         self.device = device
         self.num_classes = num_classes
+        self.prior_prec = prior_prec
         
         self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), base_dist_params['covariance_m'].to(device))
         
@@ -168,7 +169,8 @@ class Normalizing_flow(nn.Module):
         2. Score it's likelihood against p_z
         """
         
-        ws = pyro.sample("weights", self.flow_dist)
+        #ws = pyro.sample("weights", self.flow_dist)
+        ws = pyro.sample("weights", dist.Normal(torch.zeros(self.input_dim).to(self.device), math.sqrt(1/(self.prior_prec))).to_event(1))
         _, class_probs, _  = predict_Lm1(ws, x, y, self.num_classes)
         with pyro.plate("data", x.shape[0]):
             pyro.sample("obs", dist.Categorical(probs=class_probs), obs=y)

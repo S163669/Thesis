@@ -19,22 +19,24 @@ import pyro.optim as optim
 import matplotlib.pyplot as plt
 import torch.utils.data as data
 
-basepath = '/home/clem/Documents/Thesis/'
-#basepath = '/zhome/fa/5/117117/Thesis/'
+#basepath = '/home/clem/Documents/Thesis/'
+basepath = '/zhome/fa/5/117117/Thesis/'
 do_map = True
 do_laplace = True
-do_hmc = False
+do_hmc = True
 do_posterior_refinemenent = True
 make_plots = False
 
-precs_prior_hmc = [4.5]
+precs_prior_hmc = [4, 4.5, 5]
+flow_lens = [1, 5, 10, 30]
 
 dataset_choice = 'cifar10'
 torch.manual_seed = 12
 batch_nb = 128
 num_workers = 0
 
-train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers, batch_size_val=batch_nb, val_size=2000, data_augmentation=False)
+train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers,
+                                                                batch_size_val=batch_nb, val_size=2000, data_augmentation=False, normalize=True)
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -71,13 +73,12 @@ if do_laplace:
     nll_laplace = -torch.distributions.Categorical(probs_laplace).log_prob(targets).mean()
     
     la_samples = la.sample(600)
-    #torch.save(la_samples, './Run_metrics/la_samples')
+    torch.save(la_samples, './Run_metrics/la_samples')
 
     print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.4}')
-    #print(f"Mean LA samples {la_samples.mean(0)}")
     
     posterior_params = {'mean': la.mean, 'covariance_m': la.posterior_covariance}
-    #torch.save(posterior_params, './Run_metrics/la_approx_posterior')
+    torch.save(posterior_params, './Run_metrics/la_approx_posterior')
 
 
 if do_hmc:
@@ -103,6 +104,7 @@ if do_hmc:
             
             best_acc_hmc, best_ece_hmc, best_nll_hmc = acc_hmc, ece_hmc, nll_hmc
             best_prec = prec
+            hmc_samples['precision'] = prec 
             torch.save(hmc_samples, './Run_metrics/hmc_samples')
             
     
@@ -122,7 +124,6 @@ if do_hmc:
 if do_posterior_refinemenent:
     
     n_epochs = 20
-    flow_len = 1
     
     if 'act_train' not in locals():
         act_train, y_train = get_act_Lm1(model, train_loader, device)
@@ -131,40 +132,48 @@ if do_posterior_refinemenent:
     if 'posterior_params' not in locals():
         posterior_params = torch.load('./Run_metrics/la_approx_posterior')
     
+    if 'best_prec' not in locals():
+        hmc_samples = torch.load('./Run_metrics/hmc_samples')
+        best_prec = hmc_samples['precision']
+    
+    
     dim = (act_train.shape[1] + 1)*10   # +1 for bias *10 for number of weights per hidden unit    
     
     train_loader_act = data.DataLoader(data.TensorDataset(act_train.cpu(), y_train.cpu()), batch_size=128, shuffle=True, num_workers=0)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    #optimizer = optim.Adam({'lr' : 0.001})
-    optimizer = torch.optim.Adam
-    n_steps = n_epochs * len(train_loader_act)
-    params_scheduler = {'optimizer': optimizer, 'optim_args': {'lr': 1e-3, 'weight_decay': 0}, 'T_max': n_steps}
-    scheduler = optim.CosineAnnealingLR(params_scheduler)
-    nf = Normalizing_flow(dim, 'radial', flow_len, device, posterior_params, num_classes)
-
-    svi = SVI(nf.model, nf.guide, optim=scheduler, loss=Trace_ELBO())
-
-    losses = []
-    for epoch in range(n_epochs):
-        print(f'epoch: {epoch}')
-        epoch_loss = 0
-        
-        for x, y in train_loader_act:
-            loss = svi.step(x.to(device), y.to(device))
-            scheduler.step()
-            epoch_loss += loss
+    
+    for flow_len in flow_lens:
+    
+        #optimizer = optim.Adam({'lr' : 0.001})
+        optimizer = torch.optim.Adam
+        n_steps = n_epochs * len(train_loader_act)
+        params_scheduler = {'optimizer': optimizer, 'optim_args': {'lr': 1e-3, 'weight_decay': 0}, 'T_max': n_steps}
+        scheduler = optim.CosineAnnealingLR(params_scheduler)
+        nf = Normalizing_flow(dim, 'radial', flow_len, device, posterior_params, num_classes, best_prec)
+    
+        svi = SVI(nf.model, nf.guide, optim=scheduler, loss=Trace_ELBO())
+    
+        losses = []
+        for epoch in range(n_epochs):
+            print(f'epoch: {epoch}')
+            epoch_loss = 0
             
-        print(f'loss: {epoch_loss}')
-        losses.append(epoch_loss)
-    
-    refined_posterior_samples = nf.sample(600)
-    torch.save(refined_posterior_samples, './Run_metrics/refined_posterior_samples_{flow_len}_epochs_{n_epochs}')
-    
-    acc_refp, ece_refp, nll_refp = metrics_ll_weight_samples(refined_posterior_samples.cpu(), act_test, y_test, num_classes)
-    
-    print(f'[Refined posterior nf_len: {flow_len}] Best on test: Acc.: {acc_refp:.1%}; ECE: {ece_refp:.1%}; NLL: {nll_refp:.4}')
-    
+            for x, y in train_loader_act:
+                loss = svi.step(x.to(device), y.to(device))
+                scheduler.step()
+                epoch_loss += loss
+                
+            print(f'loss: {epoch_loss}')
+            losses.append(epoch_loss)
+        
+        refined_posterior_samples = nf.sample(600)
+        torch.save(refined_posterior_samples, f'./Run_metrics/refined_posterior_samples_{flow_len}_epochs_{n_epochs}')
+        
+        acc_refp, ece_refp, nll_refp = metrics_ll_weight_samples(refined_posterior_samples.cpu(), act_test, y_test, num_classes)
+        
+        print(f'[Refined posterior nf_len: {flow_len}] Best on test: Acc.: {acc_refp:.1%}; ECE: {ece_refp:.1%}; NLL: {nll_refp:.4}')
+        
     if make_plots:
         
         plt.figure()

@@ -72,7 +72,7 @@ if do_map:
     acc_map = (sum(torch.argmax(probs_map, 1)==targets_map)/len(targets_map)).item()
     nll_map = -torch.distributions.Categorical(probs_map).log_prob(targets_map).mean().item()
     
-    results['map'] = {'acc': acc_map.item(), 'ece': ece_map, 'nll': nll_map}
+    results['map'] = {'acc': acc_map, 'ece': ece_map, 'nll': nll_map}
     print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.4}')
 
 

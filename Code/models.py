@@ -115,7 +115,7 @@ def wrn(**kwargs):
 
 class Normalizing_flow(nn.Module):
     
-    def __init__(self, input_dim, nf_type, flow_len, device, base_dist_params, num_classes, prior_prec):
+    def __init__(self, input_dim, nf_type, flow_len, device, base_dist_params, num_classes, prior_prec, N):
         
         super(Normalizing_flow, self).__init__()
         
@@ -125,6 +125,7 @@ class Normalizing_flow(nn.Module):
         self.device = device
         self.num_classes = num_classes
         self.prior_prec = prior_prec
+        self.N = N
         
         self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), base_dist_params['covariance_m'].to(device))
         
@@ -158,7 +159,7 @@ class Normalizing_flow(nn.Module):
         
         #N = len(x) if x is not None else None
         pyro.module("nf", nn.ModuleList(self.transforms).to(self.device))
-        obs = pyro.sample("weights", self.flow_dist)
+        pyro.sample("weights", self.flow_dist)
                 
     def model(self, x, y):
         """
@@ -172,7 +173,7 @@ class Normalizing_flow(nn.Module):
         #ws = pyro.sample("weights", self.flow_dist)
         ws = pyro.sample("weights", dist.Normal(torch.zeros(self.input_dim).to(self.device), math.sqrt(1/(self.prior_prec))).to_event(1))
         _, class_probs, _  = predict_Lm1(ws, x, y, self.num_classes)
-        with pyro.plate("data", x.shape[0]):
+        with pyro.plate("data", size=self.N, subsample_size=len(y.squeeze())):
             pyro.sample("obs", dist.Categorical(probs=class_probs), obs=y)
     
     

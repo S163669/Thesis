@@ -61,17 +61,19 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #if not os.path.isdir(args.checkpoint):
 #   mkdir_p(args.checkpoint)
 
-# Datasum_probs_true/len(samples)
+# DIFFERENCE HERE: BATCH SIZE IS SET TO 128 BUT IN PAPER 512
 train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_size, num_workers, batch_size_val=batch_size,
                                                                 val_size=2000, data_augmentation=True, normalize=False)
 
-# Model
+# Model# DIFFERENCE HERE: BATCH SIZE IS SET TO 128 BUT IN PAPER 512
 model = WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0.0)
 
+# DIIFFERENCE HERE: THE TWO CONSECUTIVE LINES ARE NOT USED IN PAPER CODE (REMEMBER TO INCLUDE TO DEVICE IF REMOVED)
 model = torch.nn.DataParallel(model).to(device)
 cudnn.benchmark = True
 
 print('    Total params: %.2fM' % (sum(p.numel() for p in model.parameters())/1000000.0))
+# DIFFERENCE HERE: nn.CrossEntropyLoss() USED INSTEAD OF F.cross_entropy
 criterion = nn.CrossEntropyLoss()
 
 if opt_choice == 'Adam':
@@ -79,8 +81,9 @@ if opt_choice == 'Adam':
 else:
     optimizer = optim.SGD(model.parameters(), lr=lr, momentum=0.9, nesterov=True, weight_decay=weight_decay)
     n_steps = epochs * len(train_loader)
+    # DIFFERENCE HERE, NO eta_min IN PAPER CODE
     scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, n_steps, eta_min=lr_min)
-
+# DIFFERENCE HERE IN SOLVE.TRAIN amp.GradScaler() IS USED IN PAPER
 solver = Solver(model, optimizer, criterion, device, scheduler=scheduler)
 
 best_acc = 0  # best test accuracy

@@ -221,7 +221,7 @@ def metrics_ll_weight_samples(samples, x, y, num_classes):
     # Calculating 1/S*Sum_1^Ŝ(p(y* | f(x*)))) for each x* and taking log to get log(p(y* |x*, D)) 
     # then taking negative of the mean for each x*.
     nll = -torch.mean(torch.log(sum_class_probs[range(len(y)),y]/len(samples))).item()
-    ece = ECE(bins=15).measure(class_probs.numpy(), y.numpy())
+    ece = ECE(bins=15).measure((sum_class_probs/len(samples)).numpy(), y.numpy())
     
     return sum(accs)/len(accs), ece, nll
 

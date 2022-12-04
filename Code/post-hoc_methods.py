@@ -18,6 +18,8 @@ from pyro.infer import SVI, Trace_ELBO
 import pyro.optim as optim
 import matplotlib.pyplot as plt
 import torch.utils.data as data
+import os
+import pickle
 
 #basepath = '/home/clem/Documents/Thesis/'
 basepath = '/zhome/fa/5/117117/Thesis/'
@@ -27,10 +29,11 @@ do_hmc = True
 do_posterior_refinemenent = True
 make_plots = False
 
-precs_prior_hmc = [4, 4.5, 5]
+precs_prior_hmc = [30, 35, 40, 45, 50, 55]
 flow_lens = [1, 5, 10, 30]
 
 dataset_choice = 'cifar10'
+model_choice = 'WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5'
 torch.manual_seed = 12
 batch_nb = 128
 num_workers = 0
@@ -44,10 +47,22 @@ model = WideResNet(depth=16, num_classes=num_classes, widen_factor=4, dropRate=0
 model = torch.nn.DataParallel(model).to(device)
 
 #checkpoint_bestmodel = torch.load('/home/clem/Documents/Thesis/checkpoints/WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_16_epochs_150_wd_0.0005/model_best.pt')
-checkpoint_bestmodel = torch.load(basepath + f'checkpoints/{dataset_choice}/'+'WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5/checkpoint.pt')
+checkpoint_bestmodel = torch.load(basepath + f'checkpoints/{dataset_choice}/{model_choice}/checkpoint.pt')
 
 model.load_state_dict(checkpoint_bestmodel['state_dict'])
 model.eval()
+
+metrics_path = f'./Run_metrics/{dataset_choice}/{model_choice}/'
+if not os.path.exists(metrics_path):
+    os.makedirs(metrics_path)
+    results = {}
+else:
+    try:
+        with open(metrics_path + 'results_metrics.pkl', 'rb') as f:
+            results = pickle.load(f)
+    except:
+        results = {}
+
 
 if do_map:
     
@@ -55,6 +70,8 @@ if do_map:
     ece_map = ECE(bins=15).measure(probs_map.numpy(), targets_map.numpy())
     acc_map = sum(torch.argmax(probs_map, 1)==targets_map)/len(targets_map)
     nll_map = -torch.distributions.Categorical(probs_map).log_prob(targets_map).mean()
+    
+    results['map'] = {'acc': acc_map, 'ece': ece_map, 'nll': nll_map}
     print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.4}')
 
 
@@ -73,12 +90,13 @@ if do_laplace:
     nll_laplace = -torch.distributions.Categorical(probs_laplace).log_prob(targets).mean()
     
     la_samples = la.sample(600)
-    torch.save(la_samples, './Run_metrics/la_samples')
-
+    torch.save(la_samples, metrics_path + 'la_samples')
+    
+    results['la'] = {'acc': acc_laplace, 'ece': ece_laplace, 'nll': nll_laplace}
     print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.4}')
     
     posterior_params = {'mean': la.mean, 'covariance_m': la.posterior_covariance}
-    torch.save(posterior_params, './Run_metrics/la_approx_posterior')
+    torch.save(posterior_params, metrics_path + 'la_approx_posterior')
 
 
 if do_hmc:
@@ -105,7 +123,7 @@ if do_hmc:
             best_acc_hmc, best_ece_hmc, best_nll_hmc = acc_hmc, ece_hmc, nll_hmc
             best_prec = prec
             hmc_samples['precision'] = prec 
-            torch.save(hmc_samples, './Run_metrics/hmc_samples')
+            torch.save(hmc_samples, metrics_path + 'hmc_samples')
             
     
         print(f'[HMC] validation: Prec: {prec} -> Acc.: {acc_hmc:.1%}; ECE: {ece_hmc:.1%}; NLL: {nll_hmc:.4}')
@@ -113,9 +131,10 @@ if do_hmc:
     print(f'[HMC] BEST validation: Opt-Prec {best_prec};  Acc.: {best_acc_hmc:.1%}; ECE: {best_ece_hmc:.1%}; NLL: {best_nll_hmc:.4}')
     
     
-    hmc_samples = torch.load('./Run_metrics/hmc_samples')
+    hmc_samples = torch.load(metrics_path + 'hmc_samples')
     acc_hmc, ece_hmc, nll_hmc = metrics_ll_weight_samples(hmc_samples['ll_weights'], act_test, y_test, num_classes)
     
+    results['hmc'] = {'acc': acc_hmc, 'ece': ece_hmc, 'nll': nll_hmc}
     print(f'[HMC] Best on test: Acc.: {acc_hmc:.1%}; ECE: {ece_hmc:.1%}; NLL: {nll_hmc:.4}')
     
     #print(f"Mean HMC samples {hmc_samples['ll_weights'].mean(0)}")
@@ -130,13 +149,13 @@ if do_posterior_refinemenent:
         act_test, y_test = get_act_Lm1(model, test_loader, device)
         
     if 'posterior_params' not in locals():
-        posterior_params = torch.load('./Run_metrics/la_approx_posterior')
+        posterior_params = torch.load(metrics_path + 'la_approx_posterior')
     
     if 'best_prec' not in locals():
-        hmc_samples = torch.load('./Run_metrics/hmc_samples')
+        hmc_samples = torch.load(metrics_path + 'hmc_samples')
         best_prec = hmc_samples['precision']
     
-    
+    N = act_train.shape[0]
     dim = (act_train.shape[1] + 1)*10   # +1 for bias *10 for number of weights per hidden unit    
     
     train_loader_act = data.DataLoader(data.TensorDataset(act_train.cpu(), y_train.cpu()), batch_size=128, shuffle=True, num_workers=0)
@@ -150,13 +169,13 @@ if do_posterior_refinemenent:
         n_steps = n_epochs * len(train_loader_act)
         params_scheduler = {'optimizer': optimizer, 'optim_args': {'lr': 1e-3, 'weight_decay': 0}, 'T_max': n_steps}
         scheduler = optim.CosineAnnealingLR(params_scheduler)
-        nf = Normalizing_flow(dim, 'radial', flow_len, device, posterior_params, num_classes, best_prec)
+        nf = Normalizing_flow(dim, 'radial', flow_len, device, posterior_params, num_classes, best_prec, N)
     
         svi = SVI(nf.model, nf.guide, optim=scheduler, loss=Trace_ELBO())
     
         losses = []
         for epoch in range(n_epochs):
-            print(f'epoch: {epoch}')
+            print(f'epoch: {epoch+1}')
             epoch_loss = 0
             
             for x, y in train_loader_act:
@@ -168,10 +187,11 @@ if do_posterior_refinemenent:
             losses.append(epoch_loss)
         
         refined_posterior_samples = nf.sample(600)
-        torch.save(refined_posterior_samples, f'./Run_metrics/refined_posterior_samples_{flow_len}_epochs_{n_epochs}')
+        torch.save(refined_posterior_samples, metrics_path + f'refined_posterior_samples_{flow_len}')
         
         acc_refp, ece_refp, nll_refp = metrics_ll_weight_samples(refined_posterior_samples.cpu(), act_test, y_test, num_classes)
         
+        results[f'ref_nf_{flow_len}'] = {'acc': acc_refp, 'ece': ece_refp, 'nll': nll_refp}
         print(f'[Refined posterior nf_len: {flow_len}] Best on test: Acc.: {acc_refp:.1%}; ECE: {ece_refp:.1%}; NLL: {nll_refp:.4}')
         
     if make_plots:
@@ -182,4 +202,7 @@ if do_posterior_refinemenent:
         plt.ylabel('losses')
         plt.title('Training loss of normalizing flow per epoch')
         plt.legend()
-        plt.savefig(basepath + 'Figures/Training_loss_nfs.pdf', bbox_inches='tight', format='pdf')        
+        plt.savefig(basepath + 'Figures/Training_loss_nfs.pdf', bbox_inches='tight', format='pdf')     
+        
+with open(metrics_path + 'results_metrics.pkl', 'wb') as f:
+    pickle.dump(results, f)

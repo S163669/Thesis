@@ -251,7 +251,7 @@ def mmd_rbf(X, Y):
 
 def get_mmds(dataset_choice, model_choice):
     
-    with open('./Run_metrics/{dataset_choice}/{model_choice}/results_metrics.pkl', 'rb') as f:
+    with open(f'./Run_metrics/{dataset_choice}/{model_choice}/results_metrics.pkl', 'rb') as f:
         results = pickle.load(f)
     
     hmc_samples = torch.load(f'./Run_metrics/{dataset_choice}/{model_choice}/hmc_samples')['ll_weights'].cpu().numpy()
@@ -281,17 +281,20 @@ def get_mmds(dataset_choice, model_choice):
         mmd_ref_nf = mmd_rbf(nf_samples, hmc_samples)
         results[f'ref_nf_{l}']['mmd'] = mmd_ref_nf
         print(f"MMD NF refined {l}: {mmd_ref_nf}")
+        
+    with open(f'./Run_metrics/{dataset_choice}/{model_choice}/results_metrics.pkl', 'wb') as f:
+        pickle.dump(results, f)
 
 
 def compute_performance(base_model, dataset):
     
-    runs = [filename for filename in os.listdir('./Run_metrics/{dataset}') if filename.startswith(base_model)]
+    runs = [filename for filename in os.listdir(f'./Run_metrics/{dataset}') if filename.startswith(base_model) and len(filename) <= len(base_model) + 3]
     nb_runs = len(runs)
     
     all_runs = 0
     for run in runs:
         
-        with open(f'./Run_metrics/{dataset}/{run}/results_metrics.pkl', 'wb') as f:
+        with open(f'./Run_metrics/{dataset}/{run}/results_metrics.pkl', 'rb') as f:
             results = pickle.load(f)
             
             if not all_runs:

@@ -32,6 +32,8 @@ torch.manual_seed = 12
 epochs = 100
 batch_size = 128
 num_workers = 0
+data_aug = True    # Use data augmentation
+data_norm = False  # Normalize data
 
 # Params WideResNet:
 depth = 16          # minimum 10
@@ -63,7 +65,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # DIFFERENCE HERE: BATCH SIZE IS SET TO 128 BUT IN PAPER 512
 train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_size, num_workers, batch_size_val=batch_size,
-                                                                val_size=2000, data_augmentation=True, normalize=False)
+                                                                val_size=2000, data_augmentation=data_aug, normalize=data_norm)
 
 # Model# DIFFERENCE HERE: BATCH SIZE IS SET TO 128 BUT IN PAPER 512
 model = WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0.0)

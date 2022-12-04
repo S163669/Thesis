@@ -40,13 +40,13 @@ class Solver():
             #print(f'Post batch train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')
             
             # compute gradient and do SGD step
-            self.optimizer.zero_grad()
             loss.backward()
             self.optimizer.step()
             
             if self.scheduler is not None:
                 self.scheduler.step()
-                
+            
+            self.optimizer.zero_grad()
             losses.append(loss.cpu().item())
             
             #print(f'Post backprop batch train Memory: {torch.cuda.mem_get_info(0)[0]/1048576} MB / {torch.cuda.mem_get_info(0)[1]/1048576} MB \n')

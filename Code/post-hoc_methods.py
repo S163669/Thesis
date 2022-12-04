@@ -33,13 +33,14 @@ precs_prior_hmc = [30, 35, 40, 45, 50, 55]
 flow_lens = [1, 5, 10, 30]
 
 dataset_choice = 'cifar10'
+data_norm = True
 model_choice = 'WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5'
 torch.manual_seed = 12
 batch_nb = 128
 num_workers = 0
 
 train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers,
-                                                                batch_size_val=batch_nb, val_size=2000, data_augmentation=False, normalize=True)
+                                                                batch_size_val=batch_nb, val_size=2000, data_augmentation=False, normalize=data_norm)
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -68,10 +69,10 @@ if do_map:
     
     probs_map, targets_map = predict(test_loader, device, model)
     ece_map = ECE(bins=15).measure(probs_map.numpy(), targets_map.numpy())
-    acc_map = sum(torch.argmax(probs_map, 1)==targets_map)/len(targets_map)
-    nll_map = -torch.distributions.Categorical(probs_map).log_prob(targets_map).mean()
+    acc_map = (sum(torch.argmax(probs_map, 1)==targets_map)/len(targets_map)).item()
+    nll_map = -torch.distributions.Categorical(probs_map).log_prob(targets_map).mean().item()
     
-    results['map'] = {'acc': acc_map, 'ece': ece_map, 'nll': nll_map}
+    results['map'] = {'acc': acc_map.item(), 'ece': ece_map, 'nll': nll_map}
     print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.4}')
 
 
@@ -87,7 +88,7 @@ if do_laplace:
     probs_laplace, targets = predict(test_loader, device, la, using_laplace=True)
     acc_laplace = (probs_laplace.numpy().argmax(-1) == targets.numpy()).astype(int).mean()
     ece_laplace = ECE(bins=15).measure(probs_laplace.numpy(), targets.numpy())
-    nll_laplace = -torch.distributions.Categorical(probs_laplace).log_prob(targets).mean()
+    nll_laplace = -torch.distributions.Categorical(probs_laplace).log_prob(targets).mean().item()
     
     la_samples = la.sample(600)
     torch.save(la_samples, metrics_path + 'la_samples')

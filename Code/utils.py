@@ -18,6 +18,8 @@ import torch.nn.functional as F
 import numpy as np
 from sklearn import metrics
 from scipy.spatial.distance import pdist
+from models import WideResNet
+import pickle
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pt'):
     
@@ -246,4 +248,80 @@ def mmd_rbf(X, Y):
     XY = metrics.pairwise.rbf_kernel(X, Y, gamma)
 
     return XX.mean() + YY.mean() - 2 * XY.mean()
+
+def get_mmds(dataset_choice, model_choice):
+    
+    with open('./Run_metrics/{dataset_choice}/{model_choice}/results_metrics.pkl', 'rb') as f:
+        results = pickle.load(f)
+    
+    hmc_samples = torch.load(f'./Run_metrics/{dataset_choice}/{model_choice}/hmc_samples')['ll_weights'].cpu().numpy()
+    la_samples = torch.load(f'./Run_metrics/{dataset_choice}/{model_choice}/la_samples').cpu().numpy()
+    map_sample = torch.load(f'./checkpoints/{dataset_choice}/{model_choice}/checkpoint.pt')['state_dict']
+    
+    wr = WideResNet(16, 10, widen_factor=4, dropRate=0.0)
+    wr = torch.nn.DataParallel(wr)
+    wr.load_state_dict(map_sample)
+    #params = ((k.partition('module.')[2], map_sample[k]) for k in map_sample.keys())
+    
+    map_sample = torch.nn.utils.parameters_to_vector(wr.parameters()).detach().cpu().numpy()[-2570:]
+    map_sample = np.repeat(map_sample.reshape(1,-1), 600, axis=0)
+    
+    mmd_map = mmd_rbf(map_sample, hmc_samples)
+    mmd_la = mmd_rbf(la_samples, hmc_samples)
+    
+    results['map']['mmd'] = mmd_map
+    results['la']['mmd'] = mmd_la
+    
+    print(f"MMD MAP: {mmd_map}")
+    print(f"MMD LA: {mmd_la}")
+    
+    for l in [1,5,10,30]:
         
+        nf_samples = torch.load(f'./Run_metrics/refined_posterior_samples_{l}').cpu().numpy()
+        mmd_ref_nf = mmd_rbf(nf_samples, hmc_samples)
+        results[f'ref_nf_{l}']['mmd'] = mmd_ref_nf
+        print(f"MMD NF refined {l}: {mmd_ref_nf}")
+
+
+def compute_performance(base_model, dataset):
+    
+    runs = [filename for filename in os.listdir('./Run_metrics/{dataset}') if filename.startswith(base_model)]
+    nb_runs = len(runs)
+    
+    all_runs = 0
+    for run in runs:
+        
+        with open(f'./Run_metrics/{dataset}/{run}/results_metrics.pkl', 'wb') as f:
+            results = pickle.load(f)
+            
+            if not all_runs:
+                
+                keys = list(results.keys())
+                all_runs = dict(zip(keys, [{}]*len(keys)))
+                
+                for key in keys:
+                    
+                    keys_in = list(results[key].keys())
+                    all_runs[key] = dict(zip(keys_in, [[v] for v in results[key].values()]))
+                    
+            else:
+                
+                for key in all_runs.keys():
+                    
+                    for key_in in all_runs[key].keys():
+                        
+                        all_runs[key][key_in].append(results[key][key_in])
+    
+    with open(f'./Run_metrics/{dataset}/{base_model}_summary.txt', 'wb') as f:
+        
+        for key in keys:
+            f.write(f'{key}\n')
+            f.write(f'{list(all_runs[key].keys())}\n')
+            for key_in in all_runs[key].keys():
+                f.write(f'{np.mean(all_runs[key][key_in])} $\pm$ {np.std(all_runs[key][key_in])/np.sqrt(nb_runs)}\t')
+            f.write('\n')
+        
+            
+            
+            
+                    

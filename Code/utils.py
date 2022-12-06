@@ -18,8 +18,8 @@ import torch.nn.functional as F
 import numpy as np
 from sklearn import metrics
 from scipy.spatial.distance import pdist
-from models import WideResNet
 import pickle
+import re
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pt'):
     
@@ -258,12 +258,9 @@ def get_mmds(dataset_choice, model_choice):
     la_samples = torch.load(f'./Run_metrics/{dataset_choice}/{model_choice}/la_samples').cpu().numpy()
     map_sample = torch.load(f'./checkpoints/{dataset_choice}/{model_choice}/checkpoint.pt')['state_dict']
     
-    wr = WideResNet(16, 10, widen_factor=4, dropRate=0.0)
-    wr = torch.nn.DataParallel(wr)
-    wr.load_state_dict(map_sample)
     #params = ((k.partition('module.')[2], map_sample[k]) for k in map_sample.keys())
     
-    map_sample = torch.nn.utils.parameters_to_vector(wr.parameters()).detach().cpu().numpy()[-2570:]
+    map_sample = torch.load(f'./Run_metrics/{dataset_choice}/{model_choice}/map_sample').cpu().numpy()
     map_sample = np.repeat(map_sample.reshape(1,-1), 600, axis=0)
     
     mmd_map = mmd_rbf(map_sample, hmc_samples)
@@ -275,18 +272,22 @@ def get_mmds(dataset_choice, model_choice):
     print(f"MMD MAP: {mmd_map}")
     print(f"MMD LA: {mmd_la}")
     
-    for l in [1,5,10,30]:
+    samples = [filename for filename in os.listdir(f'./Run_metrics/{dataset_choice}/{model_choice}') if filename.startswith('refined_posterior_samples')]
+    for sample in samples:
         
-        nf_samples = torch.load(f'./Run_metrics/refined_posterior_samples_{l}').cpu().numpy()
+        nf_samples = torch.load(f'./Run_metrics/{dataset_choice}/{model_choice}/{sample}').cpu().numpy()
         mmd_ref_nf = mmd_rbf(nf_samples, hmc_samples)
-        results[f'ref_nf_{l}']['mmd'] = mmd_ref_nf
-        print(f"MMD NF refined {l}: {mmd_ref_nf}")
+        
+        m = re.search('refined_posterior_samples_(.*)_(\d*)', sample)
+        
+        results[f'ref_nf_{m.group(1)}_{m.group(2)}']['mmd'] = mmd_ref_nf
+        print(f"MMD NF refined {m.group(1)}-{m.group(2)}: {mmd_ref_nf}")
         
     with open(f'./Run_metrics/{dataset_choice}/{model_choice}/results_metrics.pkl', 'wb') as f:
         pickle.dump(results, f)
 
 
-def compute_performance(base_model, dataset):
+def compute_performance(dataset, base_model):
     
     runs = [filename for filename in os.listdir(f'./Run_metrics/{dataset}') if filename.startswith(base_model) and len(filename) <= len(base_model) + 3]
     nb_runs = len(runs)
@@ -315,6 +316,9 @@ def compute_performance(base_model, dataset):
                         
                         all_runs[key][key_in].append(results[key][key_in])
     
+    with open(f'./Run_metrics/{dataset}/{base_model}_all_results_metrics.pkl', 'wb') as f:
+        pickle.dump(all_runs, f)
+    
     with open(f'./Run_metrics/{dataset}/{base_model}_summary.txt', 'wb') as f:
         
         for key in keys:
@@ -323,8 +327,47 @@ def compute_performance(base_model, dataset):
             for key_in in all_runs[key].keys():
                 f.write(f'{np.mean(all_runs[key][key_in])} $\pm$ {np.std(all_runs[key][key_in])/np.sqrt(nb_runs)}\t')
             f.write('\n')
+
+def plot_flow_performance(dataset, base_model):
+    
+    if not os.path.isfile(f'./Run_metrics/{dataset}/{base_model}_all_results_metrics.pkl'):
+        compute_performance(dataset, base_model)
+    
+    if not os.path.exists(f'./Figures/{base_model}/'):
+        os.makedirs(f'./Figures/{base_model}/')
+    
+    with open(f'./Run_metrics/{dataset}/{base_model}_all_results_metrics.pkl', 'rb') as f:
+        results = pickle.load(f)
         
+        dic = {}
+        for key in results:
             
+            m = re.search('ref_nf_(.*)_(\d*)', key)
+            if m:
+                if m.group(1) not in dic.keys():
+                
+                    dic[m.group(1)] = {'flow_lens': [int(m.group(2))], 'samples': [m.group(0)]}
             
+                else:
+                
+                    dic[m.group(1)]['flow_lens'].append(int(m.group(2)))
+                    dic[m.group(1)]['samples'].append(m.group(0))
+        
+        for metric in results['map'].keys():
             
-                    
+            plt.figure()
+            
+            for flow_type in dic.keys():
+                
+                y = [results[nf][metric] for nf in dic[flow_type]['samples']]
+                y = np.asarray(y)
+                x = dic[flow_type]['flow_lens']
+                
+                plt.errorbar(x, np.mean(y, axis=1), yerr=np.std(y, axis=1)/np.sqrt(len(x)), label=flow_type)
+            
+            plt.xlabel('Length of normalizing flow')
+            plt.ylabel(metric.upper()+'.')
+            plt.legend()
+            plt.show()
+            plt.savefig(f'./Figures/{base_model}/{metric.upper()}_vs_flow_len.pdf', bbox_inches='tight', format='pdf')
+                        

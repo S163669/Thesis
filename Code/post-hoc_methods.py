@@ -27,7 +27,9 @@ do_map = True
 do_laplace = True
 do_hmc = True
 do_posterior_refinemenent = True
+flow_type = 'radial'
 make_plots = False
+save_results = True
 
 precs_prior_hmc = [30, 35, 40, 45, 50, 55]
 flow_lens = [1, 5, 10, 30]
@@ -71,6 +73,9 @@ if do_map:
     ece_map = ECE(bins=15).measure(probs_map.numpy(), targets_map.numpy())
     acc_map = (sum(torch.argmax(probs_map, 1)==targets_map)/len(targets_map)).item()
     nll_map = -torch.distributions.Categorical(probs_map).log_prob(targets_map).mean().item()
+    map_sample = torch.nn.utils.parameters_to_vector(model.parameters()).detach()[-(256+1)*num_classes:]
+    if save_results:
+        torch.save(map_sample, metrics_path + 'map_sample')
     
     results['map'] = {'acc': acc_map, 'ece': ece_map, 'nll': nll_map}
     print(f'[MAP] Acc.: {acc_map:.1%}; ECE: {ece_map:.1%}; NLL: {nll_map:.4}')
@@ -91,13 +96,15 @@ if do_laplace:
     nll_laplace = -torch.distributions.Categorical(probs_laplace).log_prob(targets).mean().item()
     
     la_samples = la.sample(600)
-    torch.save(la_samples, metrics_path + 'la_samples')
     
     results['la'] = {'acc': acc_laplace, 'ece': ece_laplace, 'nll': nll_laplace}
     print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.4}')
     
     posterior_params = {'mean': la.mean, 'covariance_m': la.posterior_covariance}
-    torch.save(posterior_params, metrics_path + 'la_approx_posterior')
+    
+    if save_results:
+        torch.save(la_samples, metrics_path + 'la_samples')
+        torch.save(posterior_params, metrics_path + 'la_approx_posterior')
 
 
 if do_hmc:
@@ -124,15 +131,16 @@ if do_hmc:
             best_acc_hmc, best_ece_hmc, best_nll_hmc = acc_hmc, ece_hmc, nll_hmc
             best_prec = prec
             hmc_samples['precision'] = prec 
-            torch.save(hmc_samples, metrics_path + 'hmc_samples')
+            if save_results:
+                torch.save(hmc_samples, metrics_path + 'hmc_samples')
             
     
         print(f'[HMC] validation: Prec: {prec} -> Acc.: {acc_hmc:.1%}; ECE: {ece_hmc:.1%}; NLL: {nll_hmc:.4}')
     
     print(f'[HMC] BEST validation: Opt-Prec {best_prec};  Acc.: {best_acc_hmc:.1%}; ECE: {best_ece_hmc:.1%}; NLL: {best_nll_hmc:.4}')
     
-    
-    hmc_samples = torch.load(metrics_path + 'hmc_samples')
+    if save_results:
+        hmc_samples = torch.load(metrics_path + 'hmc_samples')
     acc_hmc, ece_hmc, nll_hmc = metrics_ll_weight_samples(hmc_samples['ll_weights'], act_test, y_test, num_classes)
     
     results['hmc'] = {'acc': acc_hmc, 'ece': ece_hmc, 'nll': nll_hmc}
@@ -157,7 +165,7 @@ if do_posterior_refinemenent:
         best_prec = hmc_samples['precision']
     
     N = act_train.shape[0]
-    dim = (act_train.shape[1] + 1)*10   # +1 for bias *10 for number of weights per hidden unit    
+    dim = (act_train.shape[1] + 1)*num_classes   # +1 for bias *10 for number of weights per hidden unit    
     
     train_loader_act = data.DataLoader(data.TensorDataset(act_train.cpu(), y_train.cpu()), batch_size=128, shuffle=True, num_workers=0)
     
@@ -170,7 +178,7 @@ if do_posterior_refinemenent:
         n_steps = n_epochs * len(train_loader_act)
         params_scheduler = {'optimizer': optimizer, 'optim_args': {'lr': 1e-3, 'weight_decay': 0}, 'T_max': n_steps}
         scheduler = optim.CosineAnnealingLR(params_scheduler)
-        nf = Normalizing_flow(dim, 'radial', flow_len, device, posterior_params, num_classes, best_prec, N)
+        nf = Normalizing_flow(dim, flow_type, flow_len, device, posterior_params, num_classes, best_prec, N)
     
         svi = SVI(nf.model, nf.guide, optim=scheduler, loss=Trace_ELBO())
     
@@ -188,11 +196,12 @@ if do_posterior_refinemenent:
             losses.append(epoch_loss)
         
         refined_posterior_samples = nf.sample(600)
-        torch.save(refined_posterior_samples, metrics_path + f'refined_posterior_samples_{flow_len}')
+        if save_results:
+            torch.save(refined_posterior_samples, metrics_path + f'refined_posterior_samples_{flow_type}_{flow_len}')
         
         acc_refp, ece_refp, nll_refp = metrics_ll_weight_samples(refined_posterior_samples.cpu(), act_test, y_test, num_classes)
         
-        results[f'ref_nf_{flow_len}'] = {'acc': acc_refp, 'ece': ece_refp, 'nll': nll_refp}
+        results[f'ref_nf_{flow_type}_{flow_len}'] = {'acc': acc_refp, 'ece': ece_refp, 'nll': nll_refp}
         print(f'[Refined posterior nf_len: {flow_len}] Best on test: Acc.: {acc_refp:.1%}; ECE: {ece_refp:.1%}; NLL: {nll_refp:.4}')
         
     if make_plots:
@@ -203,7 +212,9 @@ if do_posterior_refinemenent:
         plt.ylabel('losses')
         plt.title('Training loss of normalizing flow per epoch')
         plt.legend()
-        plt.savefig(basepath + 'Figures/Training_loss_nfs.pdf', bbox_inches='tight', format='pdf')     
-        
-with open(metrics_path + 'results_metrics.pkl', 'wb') as f:
-    pickle.dump(results, f)
+        if save_results:
+            plt.savefig(basepath + 'Figures/Training_loss_nfs.pdf', bbox_inches='tight', format='pdf')     
+
+if save_results:        
+    with open(metrics_path + 'results_metrics.pkl', 'wb') as f:
+        pickle.dump(results, f)

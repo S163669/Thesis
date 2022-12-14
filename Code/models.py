@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pyro.distributions as dist
 import pyro
-from utils import predict_Lm1
+from utils import predict_Lm1, predict
 
 class BasicBlock(nn.Module):
     def __init__(self, in_planes, out_planes, stride, dropRate=0.0):
@@ -186,3 +186,111 @@ class Normalizing_flow(nn.Module):
         Returns log q(z|x) for z (assuming no x is required)
         """
         return self.flow_dist.log_prob(z)
+    
+    
+class Swag():
+    
+    def __init__(self, model, no_params, device, K, swag=True):
+        
+        self.model = model
+        self.no_params = no_params
+        self.device = device
+        self.swa_avg_m1 = torch.zeros(no_params, dtype=torch.float64).to(self.device)
+        self.swag = swag
+        
+        if swag:
+            self.swa_avg_m2 = torch.zeros(no_params, dtype=torch.float64).to(self.device)
+            self.Ds = torch.zeros((no_params, K), dtype=torch.float64).to(self.device)
+            self.K = K
+            self.D_it = 0
+        else:
+            self.swa_avg_m2 = None
+            self.Ds = None
+            self.swa_diag = None
+
+    def fit_swag(self, train_loader, lr, epochs, c):
+        
+        optimizer = torch.optim.SGD(filter(lambda l: l.requires_grad, self.model.parameters()), lr)
+        criterion = torch.nn.CrossEntropyLoss()
+        self.model.train()
+        
+        for epoch in range(epochs):
+            for batch_idx, (inputs, targets) in enumerate(train_loader):
+    
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+    
+                # compute output
+                outputs = self.model(inputs)
+                loss = criterion(outputs, targets)
+                
+                loss.backward()
+                optimizer.step()
+    
+            # Add a point every c'th iteration
+            if (epoch+1) % c == 0:
+                with torch.no_grad():
+                    n = epoch // c
+
+                
+                    layer = torch.nn.utils.parameters_to_vector(filter(lambda l: l.requires_grad, self.model.parameters()))
+                    self.swa_avg_m1 = (n * self.swa_avg_m1 + layer) / (n + 1)
+
+                    if self.swag:
+                        self.swa_avg_m2 = (n * self.swa_avg_m2 + torch.square(layer)) / (n + 1)
+
+                        if epoch >= epochs - self.K*c:
+                            self.Ds[:, self.D_it] = layer - self.swa_avg_m1
+
+    
+                    if self.swag and (epoch >= epochs - self.K*c):
+                        self.D_it += 1
+    
+        if self.swag:
+            self.swa_diag = self.swa_avg_m2 - torch.square(self.swa_avg_m1)
+            
+    def sample(self, S=1):
+        
+        samples = []
+        
+        z1 = torch.normal(0, 1, size=(S, self.no_params)).to(self.device)
+        z2 = torch.normal(0, 1, size=(S, self.K)).to(self.device)
+    
+        # Here self.Ds @ z2 is changed into z2 @ self.Ds.T to do computations for more than one sample at the time.
+        samples = self.swa_avg_m1 + torch.sqrt(self.swa_diag) * z1/math.sqrt(2) + (z2@self.Ds.T)/math.sqrt(2*(self.K-1))
+        
+        return samples
+            
+            
+    def swag_inference(self, data_loader, S=600):
+    
+        with torch.no_grad():
+    
+            
+            sum_preds = 0
+            #self.swa_diag[model_no] += 1e-16
+
+            if torch.sum(self.swa_diag <= 0):
+                print(f"{torch.sum(self.swa_diag <= 0)} ({torch.sum(self.swa_diag <= 0)/self.no_params*100:.4f}%) non-positive values encountered in the diagonal matrix!")
+                self.swa_diag[self.swa_diag < 0] = 1e-16
+
+            self.model.eval()
+            samples = self.sample(S)
+            
+            for sample in samples:
+
+                torch.nn.utils.vector_to_parameters(sample, filter(lambda l: l.requires_grad, self.model.parameters()))
+                
+                preds, targets = predict(data_loader, self.device, self.model)
+                sum_preds += preds
+
+            final_preds = sum_preds/S
+    
+        return final_preds, targets, samples
+    
+    
+    def get_distribution_parameters(self):
+        
+        cov_mat = 1/2*torch.diag(self.swa_diag) + (self.Ds @ self.Ds.T)/(2*(self.K-1))
+        swag_params = {'mean': self.swa_avg_m1, 'covariance_m': cov_mat}
+        
+        return swag_params

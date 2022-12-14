@@ -319,14 +319,17 @@ def compute_performance(dataset, base_model):
     with open(f'./Run_metrics/{dataset}/{base_model}_all_results_metrics.pkl', 'wb') as f:
         pickle.dump(all_runs, f)
     
-    with open(f'./Run_metrics/{dataset}/{base_model}_summary.txt', 'wb') as f:
+    with open(f'./Run_metrics/{dataset}/{base_model}_summary.txt', 'w') as f:
         
         for key in keys:
             f.write(f'{key}\n')
             f.write(f'{list(all_runs[key].keys())}\n')
             for key_in in all_runs[key].keys():
-                f.write(f'{np.mean(all_runs[key][key_in])} $\pm$ {np.std(all_runs[key][key_in])/np.sqrt(nb_runs)}\t')
+                f.write(f'{np.round(np.mean(all_runs[key][key_in]), 4)} $\pm$ {np.round(np.std(all_runs[key][key_in])/np.sqrt(nb_runs), 4)}\t')
             f.write('\n')
+
+def string_num_sort(string):
+    return list(map(int, re.findall(r'\d+', string)))[0]
 
 def plot_flow_performance(dataset, base_model):
     
@@ -352,6 +355,8 @@ def plot_flow_performance(dataset, base_model):
                 
                     dic[m.group(1)]['flow_lens'].append(int(m.group(2)))
                     dic[m.group(1)]['samples'].append(m.group(0))
+                    
+        
         
         for metric in results['map'].keys():
             
@@ -359,11 +364,19 @@ def plot_flow_performance(dataset, base_model):
             
             for flow_type in dic.keys():
                 
-                y = [results[nf][metric] for nf in dic[flow_type]['samples']]
+                y = [results[nf][metric] for nf in dic[flow_type]['samples'].sort(key=string_num_sort)]
                 y = np.asarray(y)
-                x = dic[flow_type]['flow_lens']
+                x = dic[flow_type]['flow_lens'].sort()
                 
-                plt.errorbar(x, np.mean(y, axis=1), yerr=np.std(y, axis=1)/np.sqrt(len(x)), label=flow_type)
+                plt.errorbar(x, np.mean(y, axis=1), yerr=np.std(y, axis=1)/np.sqrt(len(x)), marker='.', label=flow_type)
+            
+            if metric != 'mmd':
+                base_list = ['map', 'la', 'hmc']
+            else:
+                base_list = ['map', 'la']
+                
+            for base in base_list:
+                plt.errorbar(x, [np.mean(results[base][metric])]*len(x), yerr=[np.std(results[base][metric])/np.sqrt(len(x))]*len(x), label=base, alpha=0.5, marker='.', linestyle='--')
             
             plt.xlabel('Length of normalizing flow')
             plt.ylabel(metric.upper()+'.')

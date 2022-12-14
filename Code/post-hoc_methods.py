@@ -8,7 +8,7 @@ Created on Wed Sep 28 21:25:13 2022
 
 from laplace import Laplace
 import torch
-from models import WideResNet
+from models import WideResNet, Swag
 from dataloaders import load_cifar
 from netcal.metrics import ECE
 from utils import predict, plot_prior_vs_posterior_weights_pred, model_hmc, metrics_ll_weight_samples, get_act_Lm1
@@ -21,13 +21,15 @@ import torch.utils.data as data
 import os
 import pickle
 
-#basepath = '/home/clem/Documents/Thesis/'
-basepath = '/zhome/fa/5/117117/Thesis/'
-do_map = True
-do_laplace = True
-do_hmc = True
-do_posterior_refinemenent = True
-flow_type = 'radial'
+basepath = '/home/clem/Documents/Thesis/'
+#basepath = '/zhome/fa/5/117117/Thesis/'
+do_map = False
+do_laplace = False
+do_hmc = False
+do_swag = True
+K = 100                 #rank for covariance matrix approximation of swag
+do_posterior_refinemenent = False
+flow_types = ['radial', 'planar', 'spline']
 make_plots = False
 save_results = True
 
@@ -148,7 +150,43 @@ if do_hmc:
     
     #print(f"Mean HMC samples {hmc_samples['ll_weights'].mean(0)}")
     #plot_prior_vs_posterior_weights_pred(hmc_samples, data, ys, num_classes)
+    
 
+if do_swag:
+    
+    lr_swag = 1e-3
+    epochs_swag = 100
+    c = 1               # Add weights in running average every c'th iteration
+    
+    for param in model.parameters():
+        param.requires_grad = False
+    
+    model.module.fc.weight.requires_grad = True
+    model.module.fc.bias.requires_grad = True
+    
+    nb_params = sum(p.numel() for p in filter(lambda l: l.requires_grad, model.parameters()))
+    
+    swag = Swag(model, nb_params, device, K=K, swag=True)
+    
+    swag.fit_swag(train_loader, lr_swag, epochs_swag, c)
+    
+    probs_swag, targets, swag_samples = swag.swag_inference(test_loader, S=600)
+    
+    acc_swag = (probs_swag.numpy().argmax(-1) == targets.numpy()).astype(int).mean()
+    ece_swag = ECE(bins=15).measure(probs_swag.numpy(), targets.numpy())
+    nll_swag = -torch.distributions.Categorical(probs_swag).log_prob(targets).mean().item()
+    
+    results['swag'] = {'acc': acc_swag, 'ece': ece_swag, 'nll': nll_swag}
+    print(f'[Swag] Acc.: {acc_swag:.1%}; ECE: {ece_swag:.1%}; NLL: {nll_swag:.4}')
+    
+    dist_params = swag.get_distribution_parameters()
+    
+    if save_results:
+        torch.save(swag_samples, metrics_path + 'swag_samples')
+        torch.save(dist_params, metrics_path + 'swag_approx_posterior')
+        
+    model.load_state_dict(checkpoint_bestmodel['state_dict'])   # Reloading map weights as part of them have been changed in SGD of SWAG
+    
 if do_posterior_refinemenent:
     
     n_epochs = 20
@@ -171,38 +209,39 @@ if do_posterior_refinemenent:
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
-    for flow_len in flow_lens:
-    
-        #optimizer = optim.Adam({'lr' : 0.001})
-        optimizer = torch.optim.Adam
-        n_steps = n_epochs * len(train_loader_act)
-        params_scheduler = {'optimizer': optimizer, 'optim_args': {'lr': 1e-3, 'weight_decay': 0}, 'T_max': n_steps}
-        scheduler = optim.CosineAnnealingLR(params_scheduler)
-        nf = Normalizing_flow(dim, flow_type, flow_len, device, posterior_params, num_classes, best_prec, N)
-    
-        svi = SVI(nf.model, nf.guide, optim=scheduler, loss=Trace_ELBO())
-    
-        losses = []
-        for epoch in range(n_epochs):
-            print(f'epoch: {epoch+1}')
-            epoch_loss = 0
-            
-            for x, y in train_loader_act:
-                loss = svi.step(x.to(device), y.to(device))
-                scheduler.step()
-                epoch_loss += loss
+    for flow_type in flow_types:
+        for flow_len in flow_lens:
+        
+            #optimizer = optim.Adam({'lr' : 0.001})
+            optimizer = torch.optim.Adam
+            n_steps = n_epochs * len(train_loader_act)
+            params_scheduler = {'optimizer': optimizer, 'optim_args': {'lr': 1e-3, 'weight_decay': 0}, 'T_max': n_steps}
+            scheduler = optim.CosineAnnealingLR(params_scheduler)
+            nf = Normalizing_flow(dim, flow_type, flow_len, device, posterior_params, num_classes, best_prec, N)
+        
+            svi = SVI(nf.model, nf.guide, optim=scheduler, loss=Trace_ELBO())
+        
+            losses = []
+            for epoch in range(n_epochs):
+                print(f'epoch: {epoch+1}')
+                epoch_loss = 0
                 
-            print(f'loss: {epoch_loss}')
-            losses.append(epoch_loss)
-        
-        refined_posterior_samples = nf.sample(600)
-        if save_results:
-            torch.save(refined_posterior_samples, metrics_path + f'refined_posterior_samples_{flow_type}_{flow_len}')
-        
-        acc_refp, ece_refp, nll_refp = metrics_ll_weight_samples(refined_posterior_samples.cpu(), act_test, y_test, num_classes)
-        
-        results[f'ref_nf_{flow_type}_{flow_len}'] = {'acc': acc_refp, 'ece': ece_refp, 'nll': nll_refp}
-        print(f'[Refined posterior nf_len: {flow_len}] Best on test: Acc.: {acc_refp:.1%}; ECE: {ece_refp:.1%}; NLL: {nll_refp:.4}')
+                for x, y in train_loader_act:
+                    loss = svi.step(x.to(device), y.to(device))
+                    scheduler.step()
+                    epoch_loss += loss
+                    
+                print(f'loss: {epoch_loss}')
+                losses.append(epoch_loss)
+            
+            refined_posterior_samples = nf.sample(600)
+            if save_results:
+                torch.save(refined_posterior_samples, metrics_path + f'refined_posterior_samples_{flow_type}_{flow_len}')
+            
+            acc_refp, ece_refp, nll_refp = metrics_ll_weight_samples(refined_posterior_samples.cpu(), act_test, y_test, num_classes)
+            
+            results[f'ref_nf_{flow_type}_{flow_len}'] = {'acc': acc_refp, 'ece': ece_refp, 'nll': nll_refp}
+            print(f'[Refined posterior nf_len: {flow_type}-{flow_len}] Best on test: Acc.: {acc_refp:.1%}; ECE: {ece_refp:.1%}; NLL: {nll_refp:.4}')
         
     if make_plots:
         
@@ -213,8 +252,10 @@ if do_posterior_refinemenent:
         plt.title('Training loss of normalizing flow per epoch')
         plt.legend()
         if save_results:
-            plt.savefig(basepath + 'Figures/Training_loss_nfs.pdf', bbox_inches='tight', format='pdf')     
+            plt.savefig(basepath + 'Figures/Training_loss_nfs.pdf', bbox_inches='tight', format='pdf')
+            
 
+    
 if save_results:        
     with open(metrics_path + 'results_metrics.pkl', 'wb') as f:
         pickle.dump(results, f)

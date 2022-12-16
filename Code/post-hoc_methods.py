@@ -27,7 +27,7 @@ do_map = False
 do_laplace = False
 do_hmc = False
 do_swag = True
-K = 100                 #rank for covariance matrix approximation of swag
+K = 90                 #rank for covariance matrix approximation of swag
 do_posterior_refinemenent = False
 flow_types = ['radial', 'planar', 'spline']
 make_plots = False
@@ -170,9 +170,8 @@ if do_swag:
     
     swag.fit_swag(train_loader, lr_swag, epochs_swag, c)
     
-    probs_swag, targets, swag_samples = swag.swag_inference(test_loader, S=600)
+    probs_swag, targets, acc_swag, swag_samples = swag.swag_inference(test_loader, S=600, last_layer=True)
     
-    acc_swag = (probs_swag.numpy().argmax(-1) == targets.numpy()).astype(int).mean()
     ece_swag = ECE(bins=15).measure(probs_swag.numpy(), targets.numpy())
     nll_swag = -torch.distributions.Categorical(probs_swag).log_prob(targets).mean().item()
     

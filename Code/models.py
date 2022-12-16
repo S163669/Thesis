@@ -12,7 +12,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import pyro.distributions as dist
 import pyro
-from utils import predict_Lm1, predict
+from utils import predict_Lm1, predict, get_act_Lm1, multisample_ll_prediction
 
 class BasicBlock(nn.Module):
     def __init__(self, in_planes, out_planes, stride, dropRate=0.0):
@@ -210,28 +210,32 @@ class Swag():
 
     def fit_swag(self, train_loader, lr, epochs, c):
         
-        optimizer = torch.optim.SGD(filter(lambda l: l.requires_grad, self.model.parameters()), lr)
+        optimizer = torch.optim.SGD(filter(lambda l: l.requires_grad, self.model.parameters()), lr, momentum=0.9)
         criterion = torch.nn.CrossEntropyLoss()
         self.model.train()
         
         for epoch in range(epochs):
+            loss = 0
             for batch_idx, (inputs, targets) in enumerate(train_loader):
     
                 inputs, targets = inputs.to(self.device), targets.to(self.device)
     
                 # compute output
                 outputs = self.model(inputs)
-                loss = criterion(outputs, targets)
+                batch_loss = criterion(outputs, targets)
                 
-                loss.backward()
+                batch_loss.backward()
                 optimizer.step()
-    
+                loss += batch_loss.cpu()
+                
+            if not (epoch+1)%10 or epoch == 0:
+                print(f'[SWAG SGD] epoch {epoch+1} loss {loss}')
+            
             # Add a point every c'th iteration
             if (epoch+1) % c == 0:
                 with torch.no_grad():
                     n = epoch // c
 
-                
                     layer = torch.nn.utils.parameters_to_vector(filter(lambda l: l.requires_grad, self.model.parameters()))
                     self.swa_avg_m1 = (n * self.swa_avg_m1 + layer) / (n + 1)
 
@@ -261,12 +265,12 @@ class Swag():
         return samples
             
             
-    def swag_inference(self, data_loader, S=600):
+    def swag_inference(self, data_loader, S=600, last_layer=False):
     
         with torch.no_grad():
     
             
-            sum_preds = 0
+            sum_probs = 0
             #self.swa_diag[model_no] += 1e-16
 
             if torch.sum(self.swa_diag <= 0):
@@ -276,16 +280,27 @@ class Swag():
             self.model.eval()
             samples = self.sample(S)
             
-            for sample in samples:
-
-                torch.nn.utils.vector_to_parameters(sample, filter(lambda l: l.requires_grad, self.model.parameters()))
+            # The distinction is made here as precomputing the activation makes the computation ~30 times faster
+            if last_layer:
                 
-                preds, targets = predict(data_loader, self.device, self.model)
-                sum_preds += preds
+                act, y = get_act_Lm1(self.model, data_loader, self.device)
 
-            final_preds = sum_preds/S
+                final_probs, _ = multisample_ll_prediction(samples, act, y, 10)
+                
+            else:
+                for sample in samples:
     
-        return final_preds, targets, samples
+                    torch.nn.utils.vector_to_parameters(sample, filter(lambda l: l.requires_grad, self.model.parameters()))
+                    
+                    probs, y = predict(data_loader, self.device, self.model)
+                    sum_probs += probs
+    
+                final_probs = sum_probs/S
+                
+                y_pred = torch.argmax(final_probs, 1)
+                acc = sum(y_pred == y)/len(y)
+                
+        return final_probs, y, acc, samples
     
     
     def get_distribution_parameters(self):

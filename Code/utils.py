@@ -208,24 +208,35 @@ def predict_Lm1(coefs, x, y, num_classes):
     return acc.item(), class_prob, nll_hmc
 
 
-def metrics_ll_weight_samples(samples, x, y, num_classes):
+def multisample_ll_prediction(samples, x, y, num_classes):
     
-    accs = []
     sum_class_probs = 0
     
     for coeff in samples:
         
-        acc, class_probs, _  = predict_Lm1(coeff, x, y, num_classes)
-        accs.append(acc)
+        _ , class_probs, _  = predict_Lm1(coeff, x, y, num_classes)
         # sum of (observation x number of classes) for each HMC sample
         sum_class_probs += class_probs
         
-    # Calculating 1/S*Sum_1^Ŝ(p(y* | f(x*)))) for each x* and taking log to get log(p(y* |x*, D)) 
-    # then taking negative of the mean for each x*.
-    nll = -torch.mean(torch.log(sum_class_probs[range(len(y)),y]/len(samples))).item()
-    ece = ECE(bins=15).measure((sum_class_probs/len(samples)).numpy(), y.numpy())
+    final_class_probs = sum_class_probs/len(samples)
+    y_pred = torch.argmax(final_class_probs, 1)
     
-    return sum(accs)/len(accs), ece, nll
+    acc = sum(y_pred == y)/len(y)
+    
+    return final_class_probs, acc
+    
+        
+def metrics_ll_weight_samples(samples, x, y, num_classes):
+    
+        final_class_probs, acc = multisample_ll_prediction(samples, x, y, num_classes)
+        
+        # Calculating 1/S*Sum_1^Ŝ(p(y* | f(x*)))) for each x* and taking log to get log(p(y* |x*, D)) 
+        # then taking negative of the mean for each x*.
+        nll = -torch.mean(torch.log(final_class_probs[range(len(y)),y])).item()
+        ece = ECE(bins=15).measure(final_class_probs.numpy(), y.numpy())
+        
+        return acc, ece, nll
+
 
 def mmd_rbf(X, Y):
     """

@@ -115,7 +115,7 @@ def wrn(**kwargs):
 
 class Normalizing_flow(nn.Module):
     
-    def __init__(self, input_dim, nf_type, flow_len, device, base_dist_params, num_classes, prior_prec, N):
+    def __init__(self, input_dim, nf_type, flow_len, device, base_dist_params, num_classes, prior_prec, N, diag=False):
         
         super(Normalizing_flow, self).__init__()
         
@@ -127,7 +127,10 @@ class Normalizing_flow(nn.Module):
         self.prior_prec = prior_prec
         self.N = N
         
-        self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), base_dist_params['covariance_m'].to(device))
+        if not diag: 
+            self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), base_dist_params['covariance_m'].to(device))
+        else:
+            self.base_dist = dist.Normal(base_dist_params['mean'].to(device), base_dist_params['std'].to(device))
         
         if nf_type == 'planar':
         
@@ -195,12 +198,12 @@ class Swag():
         self.model = model
         self.no_params = no_params
         self.device = device
-        self.swa_avg_m1 = torch.zeros(no_params, dtype=torch.float64).to(self.device)
+        self.swa_avg_m1 = torch.nn.utils.parameters_to_vector(filter(lambda l: l.requires_grad, self.model.parameters())).detach().to(self.device)
         self.swag = swag
         
         if swag:
-            self.swa_avg_m2 = torch.zeros(no_params, dtype=torch.float64).to(self.device)
-            self.Ds = torch.zeros((no_params, K), dtype=torch.float64).to(self.device)
+            self.swa_avg_m2 = torch.square(self.swa_avg_m1)
+            self.Ds = torch.zeros((no_params, K)).to(self.device)
             self.K = K
             self.D_it = 0
         else:
@@ -214,7 +217,7 @@ class Swag():
         criterion = torch.nn.CrossEntropyLoss()
         self.model.train()
         
-        for epoch in range(epochs):
+        for epoch in range(1, epochs+1):
             loss = 0
             for batch_idx, (inputs, targets) in enumerate(train_loader):
     
@@ -228,11 +231,11 @@ class Swag():
                 optimizer.step()
                 loss += batch_loss.cpu()
                 
-            if not (epoch+1)%10 or epoch == 0:
-                print(f'[SWAG SGD] epoch {epoch+1} loss {loss}')
+            if not epoch%10 or epoch == 1:
+                print(f'[SWAG SGD] epoch {epoch} loss {loss}')
             
             # Add a point every c'th iteration
-            if (epoch+1) % c == 0:
+            if epoch % c == 0:
                 with torch.no_grad():
                     n = epoch // c
 
@@ -242,11 +245,11 @@ class Swag():
                     if self.swag:
                         self.swa_avg_m2 = (n * self.swa_avg_m2 + torch.square(layer)) / (n + 1)
 
-                        if epoch >= epochs - self.K*c:
+                        if epoch > epochs - self.K*c:
                             self.Ds[:, self.D_it] = layer - self.swa_avg_m1
 
     
-                    if self.swag and (epoch >= epochs - self.K*c):
+                    if self.swag and (epoch > epochs - self.K*c):
                         self.D_it += 1
     
         if self.swag:
@@ -268,10 +271,6 @@ class Swag():
     def swag_inference(self, data_loader, S=600, last_layer=False):
     
         with torch.no_grad():
-    
-            
-            sum_probs = 0
-            #self.swa_diag[model_no] += 1e-16
 
             if torch.sum(self.swa_diag <= 0):
                 print(f"{torch.sum(self.swa_diag <= 0)} ({torch.sum(self.swa_diag <= 0)/self.no_params*100:.4f}%) non-positive values encountered in the diagonal matrix!")
@@ -285,9 +284,10 @@ class Swag():
                 
                 act, y = get_act_Lm1(self.model, data_loader, self.device)
 
-                final_probs, _ = multisample_ll_prediction(samples, act, y, 10)
+                final_probs, acc = multisample_ll_prediction(samples.cpu(), act, y, 10)
                 
             else:
+                sum_probs = 0
                 for sample in samples:
     
                     torch.nn.utils.vector_to_parameters(sample, filter(lambda l: l.requires_grad, self.model.parameters()))
@@ -298,7 +298,7 @@ class Swag():
                 final_probs = sum_probs/S
                 
                 y_pred = torch.argmax(final_probs, 1)
-                acc = sum(y_pred == y)/len(y)
+                acc = sum(y_pred == y).item()/len(y)
                 
         return final_probs, y, acc, samples
     
@@ -306,6 +306,14 @@ class Swag():
     def get_distribution_parameters(self):
         
         cov_mat = 1/2*torch.diag(self.swa_diag) + (self.Ds @ self.Ds.T)/(2*(self.K-1))
+        mask = cov_mat[range(self.no_params),range(self.no_params)] <= 0
+        
+        # Enforcing positive definitness of matrix
+        if torch.sum(mask):
+            print(f"{torch.sum(mask)} ({torch.sum(mask)/self.no_params*100:.4f}%) non-positive values encountered in the matrix diagonal!")
+            cov_mat[range(self.no_params),range(self.no_params)][mask] = 1e-16
+            print("the non-positive elements were set to 1e-16")
+        
         swag_params = {'mean': self.swa_avg_m1, 'covariance_m': cov_mat}
         
         return swag_params

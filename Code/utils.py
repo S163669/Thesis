@@ -20,6 +20,7 @@ from sklearn import metrics
 from scipy.spatial.distance import pdist
 import pickle
 import re
+from dataloaders import load_cifar
 
 def save_checkpoint(state, is_best, checkpoint='checkpoint', filename='checkpoint.pt'):
     
@@ -221,7 +222,7 @@ def multisample_ll_prediction(samples, x, y, num_classes):
     final_class_probs = sum_class_probs/len(samples)
     y_pred = torch.argmax(final_class_probs, 1)
     
-    acc = sum(y_pred == y)/len(y)
+    acc = sum(y_pred == y).item()/len(y)
     
     return final_class_probs, acc
     
@@ -259,6 +260,19 @@ def mmd_rbf(X, Y):
     XY = metrics.pairwise.rbf_kernel(X, Y, gamma)
 
     return XX.mean() + YY.mean() - 2 * XY.mean()
+
+
+def hmc_mmd_uppermatrix(lst):
+    
+    mmd_distances = []
+    n = len(lst)
+    
+    for i in range(n):
+        for j in range((i+1),n):
+            mmd_distances.append(mmd_rbf(lst[i], lst[j]))
+            
+    return mmd_distances
+
 
 def get_mmds(dataset_choice, model_choice):
     
@@ -304,6 +318,8 @@ def compute_performance(dataset, base_model):
     nb_runs = len(runs)
     
     all_runs = 0
+    list_hmc_samples = []
+    
     for run in runs:
         
         with open(f'./Run_metrics/{dataset}/{run}/results_metrics.pkl', 'rb') as f:
@@ -326,6 +342,11 @@ def compute_performance(dataset, base_model):
                     for key_in in all_runs[key].keys():
                         
                         all_runs[key][key_in].append(results[key][key_in])
+            
+            list_hmc_samples.append(torch.load(f'./Run_metrics/{dataset}/{run}/hmc_samples')['ll_weights'].cpu().numpy())
+    
+    # Get all possible mmds between hmc samples of each run to have it as a baseline
+    all_runs['hmc']['mmd'] = hmc_mmd_uppermatrix(list_hmc_samples)
     
     with open(f'./Run_metrics/{dataset}/{base_model}_all_results_metrics.pkl', 'wb') as f:
         pickle.dump(all_runs, f)
@@ -342,6 +363,19 @@ def compute_performance(dataset, base_model):
 def string_num_sort(string):
     return list(map(int, re.findall(r'\d+', string)))[0]
 
+def get_ece_baseline(dataset, repetitions=10):
+    
+    basepath = '/zhome/fa/5/117117/Thesis/'
+    _ , _ , test_loader, num_classes = load_cifar(dataset, basepath + 'Datasets', 0, val_size=2000, data_augmentation=False)
+    
+    _, y = next(iter(test_loader))
+    d = torch.distributions.dirichlet.Dirichlet(torch.ones(num_classes,))
+    
+    eces = [ECE(bins=15).measure(d.sample(y.size()).numpy(), y.numpy()) for _ in range(repetitions)]   
+    
+    return np.mean(eces), np.std(eces)/np.sqrt(repetitions), eces
+    
+    
 def plot_flow_performance(dataset, base_model):
     
     if not os.path.isfile(f'./Run_metrics/{dataset}/{base_model}_all_results_metrics.pkl'):
@@ -375,16 +409,16 @@ def plot_flow_performance(dataset, base_model):
             
             for flow_type in dic.keys():
                 
-                y = [results[nf][metric] for nf in dic[flow_type]['samples'].sort(key=string_num_sort)]
+                dic[flow_type]['flow_lens'].sort()
+                dic[flow_type]['samples'].sort(key=string_num_sort)
+                
+                y = [results[nf][metric] for nf in dic[flow_type]['samples']]
                 y = np.asarray(y)
-                x = dic[flow_type]['flow_lens'].sort()
+                x = dic[flow_type]['flow_lens']
                 
                 plt.errorbar(x, np.mean(y, axis=1), yerr=np.std(y, axis=1)/np.sqrt(len(x)), marker='.', label=flow_type)
             
-            if metric != 'mmd':
-                base_list = ['map', 'la', 'hmc']
-            else:
-                base_list = ['map', 'la']
+            base_list = ['map', 'la', 'hmc']
                 
             for base in base_list:
                 plt.errorbar(x, [np.mean(results[base][metric])]*len(x), yerr=[np.std(results[base][metric])/np.sqrt(len(x))]*len(x), label=base, alpha=0.5, marker='.', linestyle='--')
@@ -394,4 +428,70 @@ def plot_flow_performance(dataset, base_model):
             plt.legend()
             plt.show()
             plt.savefig(f'./Figures/{base_model}/{metric.upper()}_vs_flow_len.pdf', bbox_inches='tight', format='pdf')
-                        
+        
+            
+def plot_swag_validation(data_norm):
+    
+    basepath = '/zhome/fa/5/117117/Thesis/'
+    with open(basepath + 'Run_metrics/swag_grid_search_results_norm={data_norm}.pkl', 'rb') as f:
+        results = pickle.load(f)
+        
+    lst = list(results.keys())
+    lst.remove('opt_params')
+    lst.remove('best_nll')
+    lst.sort(key=string_num_sort)
+    
+    style = {'0.01': '-',
+             '0.001': '--',
+             '0.0001':'-.',
+             '1e-05': ':',
+             '25': 'C5',
+             '50': 'C0',
+             '100': 'C1',
+             '200': 'C2',
+             '400': 'C3',
+             '600': 'C4'}
+    
+    metrics = 0
+    dic = {}
+    for key in lst:
+        
+        m = re.search('epoch_(\d*)_K_(\d*)_lr_(\d*\.\d*)', key)
+        if m:
+            # if the K (rank) isn't present in dictionary.
+            if m.group(2) not in dic.keys():
+            
+                dic[m.group(2)] ={m.group(3): {'epochs': [int(m.group(1))], 'acc': [results[m.group(0)]['acc']],
+                                               'ece': [results[m.group(0)]['ece']], 'nll': [results[m.group(0)]['nll']]}}
+                
+                if not metrics:
+                    metrics = list(results[m.group(0)].keys())
+                
+            # if K (rank) is present but not the learning rate.
+            elif m.group(3) not in dic[m.group(2)].keys():
+                
+                dic[m.group(2)][m.group(3)] = {'epochs': [int(m.group(1))], 'acc': [results[m.group(0)]['acc']],
+                                               'ece': [results[m.group(0)]['ece']], 'nll': [results[m.group(0)]['nll']]}
+            # if K and learning rate are all present already.    
+            else:
+                dic[m.group(2)][m.group(3)]['epochs'].append(int(m.group(1)))
+                dic[m.group(2)][m.group(3)]['acc'].append(results[m.group(0)]['acc'])
+                dic[m.group(2)][m.group(3)]['ece'].append(results[m.group(0)]['ece'])
+                dic[m.group(2)][m.group(3)]['nll'].append(results[m.group(0)]['nll'])
+                
+    for metric in metrics:
+        
+        plt.figure()
+        
+        for K in dic.keys():
+            for lr in dic[K].keys():
+                plt.plot(dic[K][lr]['epochs'], dic[K][lr][metric], color=style[K], linestyle=style[lr], label=f'K={K}, lr={lr}')
+        
+        plt.scatter(results['opt_params']['epoch'], results[f"epoch_{results['opt_params']['epoch']}_K_{results['opt_params']['K']}_lr_{results['opt_params']['lr']}"][metric],
+                 marker='*', color=style[f"{results['opt_params']['K']}"], edgecolor='b', label='optimum')
+        plt.xlabel('number of epochs')
+        plt.ylabel(metric.upper()+'.')
+        plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+        plt.savefig(f'./Figures/Swag/{metric}_vs_epoch-datanorm={data_norm}.pdf', bbox_inches='tight', format='pdf')
+        plt.show()
+                    

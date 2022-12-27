@@ -21,27 +21,33 @@ import torch.utils.data as data
 import os
 import pickle
 
-basepath = '/home/clem/Documents/Thesis/'
-#basepath = '/zhome/fa/5/117117/Thesis/'
+#basepath = '/home/clem/Documents/Thesis/'
+basepath = '/zhome/fa/5/117117/Thesis/'
 do_map = False
 do_laplace = False
 do_hmc = False
-do_swag = True
+do_swag = False
+do_estimation = False
 K = 90                 #rank for covariance matrix approximation of swag
-do_posterior_refinemenent = False
+do_posterior_refinemenent = True
 flow_types = ['radial', 'planar', 'spline']
 make_plots = False
 save_results = True
 
 precs_prior_hmc = [30, 35, 40, 45, 50, 55]
-flow_lens = [1, 5, 10, 30]
+flow_lens = [1, 5, 10, 15, 20, 25, 30]
 
 dataset_choice = 'cifar10'
 data_norm = True
 model_choice = 'WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5'
-torch.manual_seed = 12
+torch.manual_seed(12)
 batch_nb = 128
 num_workers = 0
+
+if do_estimation:
+    diag = True
+else:
+    diag = False
 
 train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers,
                                                                 batch_size_val=batch_nb, val_size=2000, data_augmentation=False, normalize=data_norm)
@@ -186,16 +192,38 @@ if do_swag:
         
     model.load_state_dict(checkpoint_bestmodel['state_dict'])   # Reloading map weights as part of them have been changed in SGD of SWAG
     
+if do_estimation:
+    
+    mean = torch.nn.utils.parameters_to_vector(model.parameters()).detach()[-(256+1)*num_classes:]
+    std = torch.std(mean)
+    #print('Setting estimation to standard normal')
+    #mean = torch.zeros((256+1)*num_classes).to(device)
+    #std = torch.ones(1).to(device)
+    posterior_params = {'mean': mean, 'std': std}
+    
+    dist = torch.distributions.Normal(mean, std)
+    est_samples = dist.sample((600,))
+    model.eval()
+
+    act_test, y_test = get_act_Lm1(model, test_loader, device)
+    acc_est, ece_est, nll_est = metrics_ll_weight_samples(est_samples, act_test, y_test, num_classes)
+
+    print(f'[Est] Acc.: {acc_est:.1%}; ECE: {ece_est:.1%}; NLL: {nll_est:.4}')
+
+    
 if do_posterior_refinemenent:
     
     n_epochs = 20
     
     if 'act_train' not in locals():
         act_train, y_train = get_act_Lm1(model, train_loader, device)
+        
+    if 'act_test' not in locals():
         act_test, y_test = get_act_Lm1(model, test_loader, device)
         
     if 'posterior_params' not in locals():
         posterior_params = torch.load(metrics_path + 'la_approx_posterior')
+        origin_basedist = 'la'
     
     if 'best_prec' not in locals():
         hmc_samples = torch.load(metrics_path + 'hmc_samples')
@@ -210,13 +238,14 @@ if do_posterior_refinemenent:
     
     for flow_type in flow_types:
         for flow_len in flow_lens:
+            pyro.clear_param_store()  # Required to not have variables from other runs influencing the results as the variables are global
         
             #optimizer = optim.Adam({'lr' : 0.001})
             optimizer = torch.optim.Adam
             n_steps = n_epochs * len(train_loader_act)
             params_scheduler = {'optimizer': optimizer, 'optim_args': {'lr': 1e-3, 'weight_decay': 0}, 'T_max': n_steps}
             scheduler = optim.CosineAnnealingLR(params_scheduler)
-            nf = Normalizing_flow(dim, flow_type, flow_len, device, posterior_params, num_classes, best_prec, N)
+            nf = Normalizing_flow(dim, flow_type, flow_len, device, posterior_params, num_classes, best_prec, N, diag=diag)
         
             svi = SVI(nf.model, nf.guide, optim=scheduler, loss=Trace_ELBO())
         
@@ -235,12 +264,12 @@ if do_posterior_refinemenent:
             
             refined_posterior_samples = nf.sample(600)
             if save_results:
-                torch.save(refined_posterior_samples, metrics_path + f'refined_posterior_samples_{flow_type}_{flow_len}')
+                torch.save(refined_posterior_samples, metrics_path + f'refined_{origin_basedist}_posterior_samples_{flow_type}_{flow_len}')
             
             acc_refp, ece_refp, nll_refp = metrics_ll_weight_samples(refined_posterior_samples.cpu(), act_test, y_test, num_classes)
             
-            results[f'ref_nf_{flow_type}_{flow_len}'] = {'acc': acc_refp, 'ece': ece_refp, 'nll': nll_refp}
-            print(f'[Refined posterior nf_len: {flow_type}-{flow_len}] Best on test: Acc.: {acc_refp:.1%}; ECE: {ece_refp:.1%}; NLL: {nll_refp:.4}')
+            results[f'ref_{origin_basedist}_nf_{flow_type}_{flow_len}'] = {'acc': acc_refp, 'ece': ece_refp, 'nll': nll_refp}
+            print(f'[Refined {origin_basedist} posterior nf_len: {flow_type}-{flow_len}] Best on test: Acc.: {acc_refp:.1%}; ECE: {ece_refp:.1%}; NLL: {nll_refp:.4}')
         
     if make_plots:
         

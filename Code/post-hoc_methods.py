@@ -27,9 +27,11 @@ do_map = False
 do_laplace = False
 do_hmc = False
 do_swag = False
-do_estimation = False
+swag_diag = False
+do_wstats = False
 K = 90                 #rank for covariance matrix approximation of swag
 do_posterior_refinemenent = True
+origin_basedist = 'la'  #['la', 'swag', 'swag-diag', 'wstats']
 flow_types = ['radial', 'planar', 'spline']
 make_plots = False
 save_results = True
@@ -44,7 +46,7 @@ torch.manual_seed(12)
 batch_nb = 128
 num_workers = 0
 
-if do_estimation:
+if do_wstats:
     diag = True
 else:
     diag = False
@@ -109,6 +111,7 @@ if do_laplace:
     print(f'[Laplace] Acc.: {acc_laplace:.1%}; ECE: {ece_laplace:.1%}; NLL: {nll_laplace:.4}')
     
     posterior_params = {'mean': la.mean, 'covariance_m': la.posterior_covariance}
+    origin_basedist = 'la'
     
     if save_results:
         torch.save(la_samples, metrics_path + 'la_samples')
@@ -174,7 +177,7 @@ if do_swag:
     
     swag = Swag(model, nb_params, device, K=K, swag=True)
     
-    swag.fit_swag(train_loader, lr_swag, epochs_swag, c)
+    swag.fit_swag(train_loader, lr_swag, epochs_swag, c, diag=swag_diag)
     
     probs_swag, targets, acc_swag, swag_samples = swag.swag_inference(test_loader, S=600, last_layer=True)
     
@@ -184,15 +187,19 @@ if do_swag:
     results['swag'] = {'acc': acc_swag, 'ece': ece_swag, 'nll': nll_swag}
     print(f'[Swag] Acc.: {acc_swag:.1%}; ECE: {ece_swag:.1%}; NLL: {nll_swag:.4}')
     
-    dist_params = swag.get_distribution_parameters()
+    posterior_params = swag.get_distribution_parameters()
+    if swag_diag:
+        origin_basedist = 'swag-diag'
+    else:
+        origin_basedist = 'swag'
     
     if save_results:
-        torch.save(swag_samples, metrics_path + 'swag_samples')
-        torch.save(dist_params, metrics_path + 'swag_approx_posterior')
+        torch.save(swag_samples, metrics_path + f'{origin_basedist}_samples')
+        torch.save(posterior_params, metrics_path + f'{origin_basedist}_approx_posterior')
         
     model.load_state_dict(checkpoint_bestmodel['state_dict'])   # Reloading map weights as part of them have been changed in SGD of SWAG
     
-if do_estimation:
+if do_wstats:
     
     mean = torch.nn.utils.parameters_to_vector(model.parameters()).detach()[-(256+1)*num_classes:]
     std = torch.std(mean)
@@ -200,15 +207,21 @@ if do_estimation:
     #mean = torch.zeros((256+1)*num_classes).to(device)
     #std = torch.ones(1).to(device)
     posterior_params = {'mean': mean, 'std': std}
+    origin_basedist = 'wstats'
     
     dist = torch.distributions.Normal(mean, std)
-    est_samples = dist.sample((600,))
+    wstats_samples = dist.sample((600,))
     model.eval()
 
     act_test, y_test = get_act_Lm1(model, test_loader, device)
-    acc_est, ece_est, nll_est = metrics_ll_weight_samples(est_samples, act_test, y_test, num_classes)
+    acc_wstats, ece_wstats, nll_wstats = metrics_ll_weight_samples(wstats_samples, act_test, y_test, num_classes)
 
-    print(f'[Est] Acc.: {acc_est:.1%}; ECE: {ece_est:.1%}; NLL: {nll_est:.4}')
+    results['wstats'] = {'acc': acc_wstats, 'ece': ece_wstats, 'nll': nll_wstats}
+    print(f'[Wstats] Acc.: {acc_wstats:.1%}; ECE: {ece_wstats:.1%}; NLL: {nll_wstats:.4}')
+    
+    if save_results:
+        torch.save(wstats_samples, metrics_path + f'{origin_basedist}_samples')
+        torch.save(posterior_params, metrics_path + f'{origin_basedist}_approx_posterior')
 
     
 if do_posterior_refinemenent:
@@ -222,8 +235,7 @@ if do_posterior_refinemenent:
         act_test, y_test = get_act_Lm1(model, test_loader, device)
         
     if 'posterior_params' not in locals():
-        posterior_params = torch.load(metrics_path + 'la_approx_posterior')
-        origin_basedist = 'la'
+        posterior_params = torch.load(metrics_path + f'{origin_basedist}_approx_posterior')
     
     if 'best_prec' not in locals():
         hmc_samples = torch.load(metrics_path + 'hmc_samples')

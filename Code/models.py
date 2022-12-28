@@ -211,8 +211,9 @@ class Swag():
             self.Ds = None
             self.swa_diag = None
 
-    def fit_swag(self, train_loader, lr, epochs, c):
+    def fit_swag(self, train_loader, lr, epochs, c, diag=False):
         
+        self.diag = diag
         optimizer = torch.optim.SGD(filter(lambda l: l.requires_grad, self.model.parameters()), lr, momentum=0.9)
         criterion = torch.nn.CrossEntropyLoss()
         self.model.train()
@@ -245,12 +246,10 @@ class Swag():
                     if self.swag:
                         self.swa_avg_m2 = (n * self.swa_avg_m2 + torch.square(layer)) / (n + 1)
 
-                        if epoch > epochs - self.K*c:
+                        if epoch > epochs - self.K*c and not diag:
                             self.Ds[:, self.D_it] = layer - self.swa_avg_m1
-
-    
-                    if self.swag and (epoch > epochs - self.K*c):
-                        self.D_it += 1
+                            self.D_it += 1
+     
     
         if self.swag:
             self.swa_diag = self.swa_avg_m2 - torch.square(self.swa_avg_m1)
@@ -260,11 +259,15 @@ class Swag():
         samples = []
         
         z1 = torch.normal(0, 1, size=(S, self.no_params)).to(self.device)
-        z2 = torch.normal(0, 1, size=(S, self.K)).to(self.device)
     
-        # Here self.Ds @ z2 is changed into z2 @ self.Ds.T to do computations for more than one sample at the time.
-        samples = self.swa_avg_m1 + torch.sqrt(self.swa_diag) * z1/math.sqrt(2) + (z2@self.Ds.T)/math.sqrt(2*(self.K-1))
+        if self.diag:
+            samples = self.swa_avg_m1 + torch.sqrt(self.swa_diag) * z1
         
+        else:
+            z2 = torch.normal(0, 1, size=(S, self.K)).to(self.device)
+            # Here self.Ds @ z2 is changed into z2 @ self.Ds.T to do computations for more than one sample at the time.
+            samples = self.swa_avg_m1 + torch.sqrt(self.swa_diag) * z1/math.sqrt(2) + (z2@self.Ds.T)/math.sqrt(2*(self.K-1))
+            
         return samples
             
             
@@ -298,22 +301,29 @@ class Swag():
                 final_probs = sum_probs/S
                 
                 y_pred = torch.argmax(final_probs, 1)
-                acc = sum(y_pred == y).item()/len(y)
+                acc = sum(y_pred == y).item()/len(y)/math.sqrt(2)
                 
         return final_probs, y, acc, samples
     
     
     def get_distribution_parameters(self):
         
-        cov_mat = 1/2*torch.diag(self.swa_diag) + (self.Ds @ self.Ds.T)/(2*(self.K-1))
-        mask = cov_mat[range(self.no_params),range(self.no_params)] <= 0
+        if self.diag:
+            if torch.sum(self.swa_diag <= 0):
+                print(f"{torch.sum(self.swa_diag <= 0)} ({torch.sum(self.swa_diag <= 0)/self.no_params*100:.4f}%) non-positive values encountered in the diagonal matrix!")
+                self.swa_diag[self.swa_diag < 0] = 1e-16
+            swag_params = {'mean': self.swa_avg_m1, 'std': torch.sqrt(self.swa_diag)}
         
-        # Enforcing positive definitness of matrix
-        if torch.sum(mask):
-            print(f"{torch.sum(mask)} ({torch.sum(mask)/self.no_params*100:.4f}%) non-positive values encountered in the matrix diagonal!")
-            cov_mat[range(self.no_params),range(self.no_params)][mask] = 1e-16
-            print("the non-positive elements were set to 1e-16")
+        else:    
+            cov_mat = 1/2*torch.diag(self.swa_diag) + (self.Ds @ self.Ds.T)/(2*(self.K-1))
+            mask = cov_mat[range(self.no_params),range(self.no_params)] <= 0
         
-        swag_params = {'mean': self.swa_avg_m1, 'covariance_m': cov_mat}
+            # Enforcing positive definitness of matrix
+            if torch.sum(mask):
+                print(f"{torch.sum(mask)} ({torch.sum(mask)/self.no_params*100:.4f}%) non-positive values encountered in the matrix diagonal!")
+                cov_mat[range(self.no_params),range(self.no_params)][mask] = 1e-16
+                print("the non-positive elements were set to 1e-16")
+        
+            swag_params = {'mean': self.swa_avg_m1, 'covariance_m': cov_mat}
         
         return swag_params

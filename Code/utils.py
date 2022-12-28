@@ -297,16 +297,16 @@ def get_mmds(dataset_choice, model_choice):
     print(f"MMD MAP: {mmd_map}")
     print(f"MMD LA: {mmd_la}")
     
-    samples = [filename for filename in os.listdir(f'./Run_metrics/{dataset_choice}/{model_choice}') if filename.startswith('refined_posterior_samples')]
+    samples = [filename for filename in os.listdir(f'./Run_metrics/{dataset_choice}/{model_choice}') if filename.startswith('refined_')]
     for sample in samples:
         
         nf_samples = torch.load(f'./Run_metrics/{dataset_choice}/{model_choice}/{sample}').cpu().numpy()
         mmd_ref_nf = mmd_rbf(nf_samples, hmc_samples)
         
-        m = re.search('refined_posterior_samples_(.*)_(\d*)', sample)
+        m = re.search('refined_(.*)_posterior_samples_(.*)_(\d*)', sample)
         
-        results[f'ref_nf_{m.group(1)}_{m.group(2)}']['mmd'] = mmd_ref_nf
-        print(f"MMD NF refined {m.group(1)}-{m.group(2)}: {mmd_ref_nf}")
+        results[f'ref_{m.group(1)}_nf_{m.group(2)}_{m.group(3)}']['mmd'] = mmd_ref_nf
+        print(f"MMD NF refined {m.group(1)}-{m.group(2)}-{m.group(3)}: {mmd_ref_nf}")
         
     with open(f'./Run_metrics/{dataset_choice}/{model_choice}/results_metrics.pkl', 'wb') as f:
         pickle.dump(results, f)
@@ -376,7 +376,7 @@ def get_ece_baseline(dataset, repetitions=10):
     return np.mean(eces), np.std(eces)/np.sqrt(repetitions), eces
     
     
-def plot_flow_performance(dataset, base_model):
+def plot_flow_performance(dataset, base_model, origin_basedist):
     
     if not os.path.isfile(f'./Run_metrics/{dataset}/{base_model}_all_results_metrics.pkl'):
         compute_performance(dataset, base_model)
@@ -390,7 +390,7 @@ def plot_flow_performance(dataset, base_model):
         dic = {}
         for key in results:
             
-            m = re.search('ref_nf_(.*)_(\d*)', key)
+            m = re.search(f'ref_{origin_basedist}_nf_(.*)_(\d*)', key)
             if m:
                 if m.group(1) not in dic.keys():
                 
@@ -418,7 +418,7 @@ def plot_flow_performance(dataset, base_model):
                 
                 plt.errorbar(x, np.mean(y, axis=1), yerr=np.std(y, axis=1)/np.sqrt(len(x)), marker='.', label=flow_type)
             
-            base_list = ['map', 'la', 'hmc']
+            base_list = ['map', origin_basedist, 'hmc']
                 
             for base in base_list:
                 plt.errorbar(x, [np.mean(results[base][metric])]*len(x), yerr=[np.std(results[base][metric])/np.sqrt(len(x))]*len(x), label=base, alpha=0.5, marker='.', linestyle='--')
@@ -427,7 +427,7 @@ def plot_flow_performance(dataset, base_model):
             plt.ylabel(metric.upper()+'.')
             plt.legend()
             plt.show()
-            plt.savefig(f'./Figures/{base_model}/{metric.upper()}_vs_flow_len.pdf', bbox_inches='tight', format='pdf')
+            plt.savefig(f'./Figures/{base_model}/{origin_basedist}_{metric.upper()}_vs_flow_len.pdf', bbox_inches='tight', format='pdf')
         
             
 def plot_swag_validation(data_norm):

@@ -29,7 +29,7 @@ do_hmc = False
 do_swag = False
 swag_diag = False
 do_wstats = False
-K = 90                 #rank for covariance matrix approximation of swag
+K = 50                 #rank for covariance matrix approximation of swag
 do_posterior_refinemenent = True
 origin_basedist = 'la'  #['la', 'swag', 'swag-diag', 'wstats']
 flow_types = ['radial', 'planar', 'spline']
@@ -40,13 +40,13 @@ precs_prior_hmc = [30, 35, 40, 45, 50, 55]
 flow_lens = [1, 5, 10, 15, 20, 25, 30]
 
 dataset_choice = 'cifar10'
-data_norm = True
-model_choice = 'WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_5'
+data_norm = False
+model_choice = 'WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_unnormalized'
 torch.manual_seed(12)
 batch_nb = 128
 num_workers = 0
 
-if do_wstats:
+if do_wstats or swag_diag:
     diag = True
 else:
     diag = False
@@ -163,9 +163,14 @@ if do_hmc:
 
 if do_swag:
     
-    lr_swag = 1e-3
-    epochs_swag = 100
+    lr_swag = 1e-4
+    epochs_swag = 50
     c = 1               # Add weights in running average every c'th iteration
+    
+    if swag_diag:
+        origin_basedist = 'swag-diag'
+    else:
+        origin_basedist = 'swag'
     
     for param in model.parameters():
         param.requires_grad = False
@@ -184,14 +189,10 @@ if do_swag:
     ece_swag = ECE(bins=15).measure(probs_swag.numpy(), targets.numpy())
     nll_swag = -torch.distributions.Categorical(probs_swag).log_prob(targets).mean().item()
     
-    results['swag'] = {'acc': acc_swag, 'ece': ece_swag, 'nll': nll_swag}
-    print(f'[Swag] Acc.: {acc_swag:.1%}; ECE: {ece_swag:.1%}; NLL: {nll_swag:.4}')
+    results[f'{origin_basedist}'] = {'acc': acc_swag, 'ece': ece_swag, 'nll': nll_swag}
+    print(f'[{origin_basedist}] Acc.: {acc_swag:.1%}; ECE: {ece_swag:.1%}; NLL: {nll_swag:.4}')
     
     posterior_params = swag.get_distribution_parameters()
-    if swag_diag:
-        origin_basedist = 'swag-diag'
-    else:
-        origin_basedist = 'swag'
     
     if save_results:
         torch.save(swag_samples, metrics_path + f'{origin_basedist}_samples')
@@ -214,7 +215,7 @@ if do_wstats:
     model.eval()
 
     act_test, y_test = get_act_Lm1(model, test_loader, device)
-    acc_wstats, ece_wstats, nll_wstats = metrics_ll_weight_samples(wstats_samples, act_test, y_test, num_classes)
+    acc_wstats, ece_wstats, nll_wstats = metrics_ll_weight_samples(wstats_samples.cpu(), act_test, y_test, num_classes)
 
     results['wstats'] = {'acc': acc_wstats, 'ece': ece_wstats, 'nll': nll_wstats}
     print(f'[Wstats] Acc.: {acc_wstats:.1%}; ECE: {ece_wstats:.1%}; NLL: {nll_wstats:.4}')

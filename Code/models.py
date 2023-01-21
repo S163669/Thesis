@@ -128,7 +128,10 @@ class Normalizing_flow(nn.Module):
         self.N = N
         
         if not diag: 
-            self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), base_dist_params['covariance_m'].to(device))
+            #self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), base_dist_params['covariance_m'].to(device))
+            # The first line was changed into the second due to the way positive definitess is checked in pyro
+            # being more imprecise than in PyTorch and resulting in errors in certain cases.
+            self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), scale_tril=torch.linalg.cholesky_ex(base_dist_params['covariance_m'].to(device)[0]))
         else:
             self.base_dist = dist.Normal(base_dist_params['mean'].to(device), base_dist_params['std'].to(device))
         
@@ -277,7 +280,7 @@ class Swag():
 
             if torch.sum(self.swa_diag <= 0):
                 print(f"{torch.sum(self.swa_diag <= 0)} ({torch.sum(self.swa_diag <= 0)/self.no_params*100:.4f}%) non-positive values encountered in the diagonal matrix!")
-                self.swa_diag[self.swa_diag < 0] = 1e-16
+                self.swa_diag[self.swa_diag < 0] = 1e-10
 
             self.model.eval()
             samples = self.sample(S)
@@ -311,7 +314,7 @@ class Swag():
         if self.diag:
             if torch.sum(self.swa_diag <= 0):
                 print(f"{torch.sum(self.swa_diag <= 0)} ({torch.sum(self.swa_diag <= 0)/self.no_params*100:.4f}%) non-positive values encountered in the diagonal matrix!")
-                self.swa_diag[self.swa_diag < 0] = 1e-16
+                self.swa_diag[self.swa_diag < 0] = 1e-10
             swag_params = {'mean': self.swa_avg_m1, 'std': torch.sqrt(self.swa_diag)}
         
         else:    
@@ -321,9 +324,13 @@ class Swag():
             # Enforcing positive definitness of matrix
             if torch.sum(mask):
                 print(f"{torch.sum(mask)} ({torch.sum(mask)/self.no_params*100:.4f}%) non-positive values encountered in the matrix diagonal!")
-                cov_mat[range(self.no_params),range(self.no_params)][mask] = 1e-16
+                cov_mat[range(self.no_params),range(self.no_params)][mask] = 1e-10
                 print("the non-positive elements were set to 1e-16")
+            
+            # Including parameters for diagonal SWAG, for them to come from the same run
+            if torch.sum(self.swa_diag <= 0):
+                self.swa_diag[self.swa_diag < 0] = 1e-10
         
-            swag_params = {'mean': self.swa_avg_m1, 'covariance_m': cov_mat}
+            swag_params = {'mean': self.swa_avg_m1, 'covariance_m': cov_mat, 'std': torch.sqrt(self.swa_diag)}
         
         return swag_params

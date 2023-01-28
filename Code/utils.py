@@ -418,7 +418,7 @@ def plot_flow_performance(dataset, base_model, origin_basedist):
                 
                 plt.errorbar(x, np.mean(y, axis=1), yerr=np.std(y, axis=1)/np.sqrt(len(x)), marker='.', label=flow_type)
             
-            base_list = ['map', origin_basedist, 'hmc']
+            base_list = [origin_basedist, 'map', 'la', 'hmc']
                 
             for base in base_list:
                 plt.errorbar(x, [np.mean(results[base][metric])]*len(x), yerr=[np.std(results[base][metric])/np.sqrt(len(x))]*len(x), label=base, alpha=0.5, marker='.', linestyle='--')
@@ -426,7 +426,7 @@ def plot_flow_performance(dataset, base_model, origin_basedist):
             plt.xlabel('Length of normalizing flow')
             plt.ylabel(metric.upper()+'.')
             plt.legend()
-            plt.show()
+            #plt.show()
             plt.savefig(f'./Figures/{base_model}/{origin_basedist}_{metric.upper()}_vs_flow_len.pdf', bbox_inches='tight', format='pdf')
         
             
@@ -494,4 +494,4 @@ def plot_swag_validation(data_norm):
         plt.legend(loc='center left', bbox_to_anchor=(1, 0.5))
         plt.savefig(f'./Figures/Swag/{metric}_vs_epoch-datanorm={data_norm}.pdf', bbox_inches='tight', format='pdf')
         plt.show()
-                    
+

@@ -34,6 +34,7 @@ batch_size = 128
 num_workers = 0
 data_aug = True    # Use data augmentation
 data_norm = False  # Normalize data
+frac_train = 0.25  # fraction of train data to use, for 100% just set to False
 
 # Params WideResNet:
 depth = 16          # minimum 10
@@ -51,7 +52,7 @@ else:
     if dataset_choice == 'f-mnist':
         model_params = f'LeNet_MAP_SGDNesterov_lr_{lr}_lr_min_{lr_min}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
     else:
-        model_params = f'WideResNet-{depth}-{widen_factor}_MAP_SGDNesterov_lr_{lr}_lr_min_{lr_min}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep'
+        model_params = f'WideResNet-{depth}-{widen_factor}_MAP_SGDNesterov_lr_{lr}_lr_min_{lr_min}_btch_{batch_size}_epochs_{epochs}_wd_{weight_decay}_new_data_prep_frac_train_{frac_train}'
 
 checkpoint_path = os.path.join(checkpoint_path + f'/{dataset_choice}', model_params)
 
@@ -65,7 +66,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # DIFFERENCE HERE: BATCH SIZE IS SET TO 128 BUT IN PAPER 512
 train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, path, batch_size, num_workers, batch_size_val=batch_size,
-                                                                val_size=2000, data_augmentation=data_aug, normalize=data_norm)
+                                                                val_size=2000, data_augmentation=data_aug, normalize=data_norm, frac_train=frac_train)
 
 # Model# DIFFERENCE HERE: BATCH SIZE IS SET TO 128 BUT IN PAPER 512
 model = WideResNet(depth=depth, num_classes=num_classes, widen_factor=widen_factor, dropRate=0.0)

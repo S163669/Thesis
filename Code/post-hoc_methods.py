@@ -41,8 +41,9 @@ flow_lens = [1, 5, 10, 15, 20, 25, 30]
 
 dataset_choice = 'cifar10'
 data_norm = False
-model_choice = 'WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_1e-06_btch_128_epochs_100_wd_0.0005_new_data_prep_unnormalized'
+model_choice = 'WideResNet-16-4_MAP_SGDNesterov_lr_0.1_lr_min_0_btch_128_epochs_100_wd_0.0005_new_data_prep_unnormalized_frac_data_0.25'
 torch.manual_seed(12)
+frac_train = 0.25
 batch_nb = 128
 num_workers = 0
 
@@ -52,7 +53,7 @@ else:
     diag = False
 
 train_loader, val_loader, test_loader, num_classes = load_cifar(dataset_choice, basepath + 'Datasets', batch_nb, num_workers,
-                                                                batch_size_val=batch_nb, val_size=2000, data_augmentation=False, normalize=data_norm)
+                                                                batch_size_val=batch_nb, val_size=2000, data_augmentation=False, normalize=data_norm, frac_train=frac_train)
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -131,7 +131,7 @@ class Normalizing_flow(nn.Module):
             #self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), base_dist_params['covariance_m'].to(device))
             # The first line was changed into the second due to the way positive definitess is checked in pyro
             # being more imprecise than in PyTorch and resulting in errors in certain cases.
-            self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), scale_tril=torch.linalg.cholesky_ex(base_dist_params['covariance_m'].to(device)[0]))
+            self.base_dist = dist.MultivariateNormal(base_dist_params['mean'].to(device), scale_tril=torch.linalg.cholesky_ex(base_dist_params['covariance_m'].to(device))[0])
         else:
             self.base_dist = dist.Normal(base_dist_params['mean'].to(device), base_dist_params['std'].to(device))
         

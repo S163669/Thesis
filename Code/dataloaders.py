@@ -17,8 +17,10 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torch.utils.data as data
 import torch
+import numpy as np
+import random
 
-def load_cifar(dataset_choice, path, batch_size="fullbatch", num_workers=0, batch_size_val="fullbatch", val_size=2000, data_augmentation=True, normalize=True):
+def load_cifar(dataset_choice, path, batch_size="fullbatch", num_workers=0, batch_size_val="fullbatch", val_size=2000, data_augmentation=True, normalize=True, frac_train=False):
     #batch_size_val was set to 512
     mean = [x / 255 for x in [125.3, 123.0, 113.9]]
     std = [x / 255 for x in [63.0, 62.1, 66.7]]
@@ -42,6 +44,9 @@ def load_cifar(dataset_choice, path, batch_size="fullbatch", num_workers=0, batc
         num_classes = 100
     
     trainset = dataloader(root=path, train=True, download=True, transform=transform_train)
+    
+    if frac_train:
+        trainset = sample_dataset_balanced(trainset, sample_size=frac_train)
     
     if batch_size == "fullbatch":
         train_loader = data.DataLoader(trainset, batch_size=trainset.__len__(), shuffle=True, num_workers=num_workers)
@@ -88,3 +93,22 @@ def val_test_split(dataset, val_size=5000, batch_size=512, num_workers=0, pin_me
                                         num_workers=num_workers, pin_memory=pin_memory)
         
     return val_loader, test_loader
+
+
+def sample_dataset_balanced(dataset, sample_size=0.1):
+    # get the class labels for each example in the dataset
+    labels = [dataset[i][1] for i in range(len(dataset))]
+    # count the number of examples for each class
+    class_counts = np.bincount(labels)
+    # calculate the number of samples to take from each class
+    class_samples = (class_counts * sample_size).astype(int)
+    # create a list to hold the indices of the examples to keep
+    keep_indices = []
+    # for each class, sample the specified number of examples
+    for class_num in range(len(class_counts)):
+        class_indices = np.where(np.array(labels) == class_num)[0]
+        keep_indices.extend(np.random.choice(class_indices, size=class_samples[class_num], replace=False))
+    # return a new dataset containing only the kept examples
+    random.shuffle(keep_indices)
+    
+    return data.Subset(dataset, keep_indices)
